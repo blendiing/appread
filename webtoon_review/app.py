@@ -3,11 +3,9 @@ from google_play_scraper import reviews, Sort
 import pandas as pd
 from collections import Counter
 from wordcloud import WordCloud
-import matplotlib.pyplot as plt
 import re
 import os
 from io import BytesIO
-from datetime import datetime
 
 # ----------------------------
 # 페이지 설정
@@ -67,6 +65,22 @@ def simple_tokenizer(text):
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
     return tokens
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_default_data():
+    """
+    디폴트 데이터 로드 (CSV 파일에서)
+    - 네이버 웹툰 리뷰 1000건
+    - 2025.01.19 19:00 기준 데이터
+    """
+    try:
+        csv_path = os.path.join(os.path.dirname(__file__), "default_reviews.csv")
+        df = pd.read_csv(csv_path)
+        df["at"] = pd.to_datetime(df["at"])
+        return df
+    except Exception as e:
+        st.error(f"기본 데이터 로드 실패: {e}")
+        return pd.DataFrame()
+
 @st.cache_data(ttl=7200, show_spinner=False)
 def get_reviews_cached(app_id, count=1000):
     """Google Play 리뷰 수집 (캐싱)"""
@@ -96,25 +110,6 @@ def get_reviews_cached(app_id, count=1000):
     if not df.empty:
         df["at"] = pd.to_datetime(df["at"])
         df["content"] = df["content"].astype(str)
-    
-    return df
-
-@st.cache_data(ttl=86400, show_spinner=False)
-def get_default_data():
-    """
-    디폴트 데이터 로드
-    - 네이버 웹툰 리뷰
-    - 2025년 1월 19일 19:00 이전 데이터 1000건
-    """
-    cutoff_date = datetime(2025, 1, 19, 19, 0, 0)
-    
-    df = get_reviews_cached("com.nhn.android.webtoon", count=1500)
-    
-    if not df.empty:
-        # 기준 시간 이전 데이터만 필터링
-        df = df[df["at"] < cutoff_date]
-        # 최신순 정렬 후 1000건만
-        df = df.sort_values(by="at", ascending=False).head(1000)
     
     return df
 
@@ -175,6 +170,11 @@ def display_analysis(df, app_name="", data_info=""):
     
     st.success(f"✅ **{len(df):,}건** 리뷰 분석 완료! {f'({app_name})' if app_name else ''}")
     
+    # 키워드 미리 계산
+    contents_tuple = tuple(df["content"].tolist())
+    tokens = extract_keywords_cached(contents_tuple)
+    counter = Counter(tokens)
+    
     # 탭 구성
     tab1, tab2, tab3, tab4 = st.tabs(["📈 통계", "💬 키워드", "🔗 연관어", "📝 리뷰"])
     
@@ -214,9 +214,6 @@ def display_analysis(df, app_name="", data_info=""):
     with tab2:
         st.subheader("💬 주요 키워드 TOP 30")
         
-        contents_tuple = tuple(df["content"].tolist())
-        tokens = extract_keywords_cached(contents_tuple)
-        counter = Counter(tokens)
         common_words = counter.most_common(30)
         
         if common_words:
@@ -242,7 +239,6 @@ def display_analysis(df, app_name="", data_info=""):
     with tab3:
         st.subheader("🔗 키워드 연관 단어")
         
-        contents_tuple = tuple(df["content"].tolist())
         co_occurrence = calculate_co_occurrence(contents_tuple)
         
         related_words = []
@@ -337,12 +333,12 @@ with st.sidebar:
 if mode == "📌 기본 데이터 보기":
     
     with st.spinner("📥 기본 데이터 로딩 중..."):
-        df = get_default_data()
+        df = load_default_data()
     
     display_analysis(
         df, 
         app_name="네이버 웹툰",
-        data_info="📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 19:00 기준 이전 데이터)"
+        data_info="📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 19:00 기준)"
     )
 
 else:  # 새로 수집하기
