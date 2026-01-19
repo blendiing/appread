@@ -590,28 +590,62 @@ st.caption("Google Play Store 리뷰를 분석하여 경쟁사 인사이트를 �
 
 # 사이드바
 with st.sidebar:
-    st.header("⚙️ 설정")
+    st.header("⚙️ 분석 설정")
+    
     st.markdown("---")
     
+    # 분석 모드 선택
     mode = st.radio(
-        "분석 모드",
+        "📊 분석 모드 선택",
         ["📌 기본 데이터 보기", "🔄 새로 수집하기"],
-        index=0
+        index=0,
+        help="기본 데이터는 네이버 웹툰 1,000건입니다."
     )
     
-    if mode == "🔄 새로 수집하기":
-        st.markdown("---")
-        selected_app = st.selectbox("앱 선택", list(APP_LIST.keys()))
-        custom_app_id = st.text_input("또는 앱 ID 직접 입력", placeholder="com.example.app")
-        review_count = st.select_slider("수집할 리뷰 수", options=[100, 300, 500, 700, 1000], value=500)
-        collect_btn = st.button("🔍 데이터 수집", type="primary", use_container_width=True)
-    else:
-        collect_btn = False
+    st.markdown("---")
+    
+    # 앱 ID 입력 (항상 표시)
+    st.markdown("#### 🔍 앱 ID 입력")
+    app_id_input = st.text_input(
+        "Google Play 앱 ID",
+        placeholder="com.example.app",
+        help="Google Play Store URL에서 id= 뒤의 값",
+        disabled=(mode == "📌 기본 데이터 보기")
+    )
+    
+    # 샘플 앱 ID
+    st.markdown("##### 📋 샘플 앱 ID")
+    st.code("com.kakaopage.app", language=None)
+    st.caption("↑ 카카오페이지")
+    st.code("com.initialcoms.ridi", language=None)
+    st.caption("↑ 리디북스")
+    st.code("com.lezhin.comics", language=None)
+    st.caption("↑ 레진코믹스")
     
     st.markdown("---")
-    st.markdown("##### 📌 지원 앱")
-    for name in APP_LIST.keys():
-        st.caption(f"• {name}")
+    
+    # 수집 옵션 (항상 표시)
+    st.markdown("#### ⚙️ 수집 옵션")
+    review_count = st.select_slider(
+        "수집할 리뷰 수",
+        options=[100, 300, 500, 700, 1000],
+        value=500,
+        disabled=(mode == "📌 기본 데이터 보기")
+    )
+    
+    # 데이터 수집 버튼
+    if mode == "🔄 새로 수집하기":
+        st.markdown("---")
+        collect_btn = st.button(
+            "🚀 데이터 수집 시작", 
+            type="primary", 
+            use_container_width=True,
+            disabled=(not app_id_input)
+        )
+        if not app_id_input:
+            st.warning("⚠️ 앱 ID를 입력해주세요.")
+    else:
+        collect_btn = False
 
 # 메인 콘텐츠
 if mode == "📌 기본 데이터 보기":
@@ -619,21 +653,37 @@ if mode == "📌 기본 데이터 보기":
         df = load_default_data()
     display_analysis(df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
-else:
-    if collect_btn:
-        app_id = custom_app_id if custom_app_id else APP_LIST[selected_app]
-        app_name = custom_app_id if custom_app_id else selected_app
-        
-        with st.spinner(f"📥 {app_name} 리뷰 수집 중... ({review_count}건)"):
-            df = get_reviews_cached(app_id, count=review_count)
+else:  # 새로 수집하기
+    if collect_btn and app_id_input:
+        with st.spinner(f"📥 {app_id_input} 리뷰 수집 중... ({review_count}건)"):
+            df = get_reviews_cached(app_id_input, count=review_count)
             df = df.sort_values(by="at", ascending=False)
             st.session_state["collected_df"] = df
-            st.session_state["collected_app"] = app_name
+            st.session_state["collected_app"] = app_id_input
     
     if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
         display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
     else:
-        st.info("👈 사이드바에서 앱을 선택하고 **데이터 수집** 버튼을 클릭하세요!")
+        st.markdown("### 👈 사이드바에서 설정 후 데이터를 수집하세요!")
+        
+        st.markdown("""
+        #### 📝 사용 방법
+        1. **새로 수집하기** 모드 선택
+        2. **앱 ID** 입력 (샘플 ID 참고)
+        3. **수집할 리뷰 수** 선택
+        4. **데이터 수집 시작** 버튼 클릭
+        
+        ---
+        
+        #### 🎯 분석 항목
+        | 탭 | 설명 |
+        |---|------|
+        | 📈 통계 | 평점 분포, 날짜별 추이 |
+        | 😊 감성분석 | 긍정/부정 분류 |
+        | 📂 토픽분류 | 결제, 광고, 버그 등 주제별 |
+        | 😤 불만분석 | 1~2점 리뷰 집중 분석 |
+        | 🙏 요청사항 | 사용자 니즈 추출 |
+        """)
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
