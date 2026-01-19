@@ -43,9 +43,7 @@ APP_LIST = {
     "네이버 웹툰": "com.nhn.android.webtoon",
     "카카오페이지": "com.kakaopage.app",
     "레진코믹스": "com.lezhin.comics",
-    "탑툰": "com.toptoon.app",
     "리디북스": "com.initialcoms.ridi",
-    "봄툰": "com.bomtoon.app",
 }
 
 # ----------------------------
@@ -57,8 +55,7 @@ STOPWORDS = {
     "해서", "하고", "해요", "합니다", "입니다", "있어요", "없어요", "같아요",
     "이런", "저런", "그런", "어떤", "무슨", "왜", "어디", "언제", "어떻게",
     "근데", "그래서", "하지만", "그러나", "그리고", "또한", "그래도",
-    "앱", "어플", "앱이", "어플이", "네이버", "naver", "있어", "없어", "하면",
-    "이용", "사용", "정도", "이상", "계속", "다시", "처음", "마지막"
+    "있어", "없어", "하면", "이용", "사용", "정도", "이상", "계속", "다시", "처음", "마지막"
 }
 
 # ----------------------------
@@ -71,7 +68,7 @@ def simple_tokenizer(text):
     return tokens
 
 @st.cache_data(ttl=7200, show_spinner=False)
-def get_reviews_cached(app_id, count=1000, before_date=None):
+def get_reviews_cached(app_id, count=1000):
     """Google Play 리뷰 수집 (캐싱)"""
     result = []
     continuation_token = None
@@ -99,20 +96,26 @@ def get_reviews_cached(app_id, count=1000, before_date=None):
     if not df.empty:
         df["at"] = pd.to_datetime(df["at"])
         df["content"] = df["content"].astype(str)
-        
-        # 특정 날짜 이전 데이터만 필터링
-        if before_date:
-            df = df[df["at"] < before_date]
     
     return df
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_default_data():
-    """디폴트 데이터 로드 (네이버 웹툰, 1/19 19:00 이전 1000건)"""
+    """
+    디폴트 데이터 로드
+    - 네이버 웹툰 리뷰
+    - 2025년 1월 19일 19:00 이전 데이터 1000건
+    """
     cutoff_date = datetime(2025, 1, 19, 19, 0, 0)
-    df = get_reviews_cached("com.nhn.android.webtoon", count=1500, before_date=cutoff_date)
+    
+    df = get_reviews_cached("com.nhn.android.webtoon", count=1500)
+    
     if not df.empty:
-        df = df.head(1000)
+        # 기준 시간 이전 데이터만 필터링
+        df = df[df["at"] < cutoff_date]
+        # 최신순 정렬 후 1000건만
+        df = df.sort_values(by="at", ascending=False).head(1000)
+    
     return df
 
 @st.cache_data(ttl=7200, show_spinner=False)
@@ -159,12 +162,16 @@ def calculate_co_occurrence(contents_tuple):
                 co_occurrence.setdefault(a, []).append(b)
     return co_occurrence
 
-def display_analysis(df, app_name=""):
+def display_analysis(df, app_name="", data_info=""):
     """분석 결과 표시"""
     
     if df.empty:
         st.error("❌ 데이터가 없습니다.")
         return
+    
+    # 데이터 정보 표시
+    if data_info:
+        st.info(data_info)
     
     st.success(f"✅ **{len(df):,}건** 리뷰 분석 완료! {f'({app_name})' if app_name else ''}")
     
@@ -316,25 +323,30 @@ with st.sidebar:
         )
         
         collect_btn = st.button("🔍 데이터 수집", type="primary", use_container_width=True)
+    else:
+        collect_btn = False
     
     st.markdown("---")
     st.markdown("##### 📌 지원 앱 목록")
-    for name, app_id in APP_LIST.items():
+    for name in APP_LIST.keys():
         st.caption(f"• {name}")
 
 # ----------------------------
 # 메인 콘텐츠
 # ----------------------------
 if mode == "📌 기본 데이터 보기":
-    st.info("📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 19:00 기준)")
     
-    with st.spinner("기본 데이터 로딩 중..."):
+    with st.spinner("📥 기본 데이터 로딩 중..."):
         df = get_default_data()
     
-    display_analysis(df, "네이버 웹툰")
+    display_analysis(
+        df, 
+        app_name="네이버 웹툰",
+        data_info="📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 19:00 기준 이전 데이터)"
+    )
 
 else:  # 새로 수집하기
-    if 'collect_btn' in dir() and collect_btn:
+    if collect_btn:
         # 앱 ID 결정
         if custom_app_id:
             app_id = custom_app_id
@@ -343,15 +355,14 @@ else:  # 새로 수집하기
             app_id = APP_LIST[selected_app]
             app_name = selected_app
         
-        st.session_state["collected_df"] = None
-        st.session_state["collected_app"] = app_name
-        
         with st.spinner(f"📥 {app_name} 리뷰 수집 중... ({review_count}건)"):
             df = get_reviews_cached(app_id, count=review_count)
+            df = df.sort_values(by="at", ascending=False)
             st.session_state["collected_df"] = df
+            st.session_state["collected_app"] = app_name
     
     # 수집된 데이터가 있으면 표시
-    if st.session_state.get("collected_df") is not None:
+    if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
         df = st.session_state["collected_df"]
         app_name = st.session_state.get("collected_app", "")
         display_analysis(df, app_name)
