@@ -17,15 +17,13 @@ st.set_page_config(
 )
 
 # ----------------------------
-# 폰트 경로 설정 (시스템 폰트 사용)
+# 폰트 경로 설정
 # ----------------------------
 def get_font_path():
-    """사용 가능한 한글 폰트 찾기"""
     possible_paths = [
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for path in possible_paths:
         if os.path.exists(path):
@@ -49,7 +47,7 @@ APP_LIST = {
 # ----------------------------
 STOPWORDS = {
     "너무", "정말", "진짜", "매우", "아주", "완전", "되게", "꽤", "좀", "약간", "살짝",
-    "웹툰", "그냥", "이거", "저거", "그것", "이것", "저것", "하는", "있는", "없는",
+    "그냥", "이거", "저거", "그것", "이것", "저것", "하는", "있는", "없는",
     "해서", "하고", "해요", "합니다", "입니다", "있어요", "없어요", "같아요",
     "이런", "저런", "그런", "어떤", "무슨", "왜", "어디", "언제", "어떻게",
     "근데", "그래서", "하지만", "그러나", "그리고", "또한", "그래도",
@@ -57,21 +55,42 @@ STOPWORDS = {
 }
 
 # ----------------------------
+# 토픽 키워드 정의
+# ----------------------------
+TOPIC_KEYWORDS = {
+    "💰 결제/가격": ["결제", "돈", "유료", "무료", "가격", "비싸", "비용", "쿠키", "코인", "충전", "환불", "구매", "구독", "이용권", "할인", "캐시"],
+    "📱 UI/UX": ["화면", "버튼", "디자인", "인터페이스", "메뉴", "불편", "편리", "직관", "레이아웃", "구성", "위치", "아이콘", "색상", "폰트", "글씨"],
+    "🐛 버그/오류": ["버그", "오류", "에러", "렉", "튕김", "멈춤", "안됨", "안돼", "작동", "느림", "로딩", "다운", "꺼짐", "강제종료", "crash"],
+    "📺 광고": ["광고", "배너", "팝업", "스킵", "건너뛰기", "동영상광고", "전면광고"],
+    "📚 콘텐츠": ["작품", "웹툰", "만화", "소설", "작가", "연재", "완결", "스토리", "내용", "재미", "그림", "퀄리티", "업데이트", "신작", "추천"],
+    "🔔 알림/편의": ["알림", "푸시", "북마크", "저장", "기록", "목록", "검색", "정렬", "필터", "공유", "다운로드", "오프라인"],
+}
+
+# ----------------------------
+# 감성 키워드 정의
+# ----------------------------
+POSITIVE_WORDS = {"좋아", "최고", "재밌", "재미있", "편리", "편해", "만족", "추천", "굿", "대박", "사랑", "완벽", "훌륭", "감사", "행복", "즐거"}
+NEGATIVE_WORDS = {"별로", "싫어", "최악", "불편", "짜증", "화나", "실망", "후회", "쓰레기", "폭망", "구림", "개선", "답답", "불만", "짜증나", "에러", "버그"}
+
+# ----------------------------
+# 요청 패턴 정의
+# ----------------------------
+REQUEST_PATTERNS = [
+    r"(.{2,20})(해주세요|해줘요|해주길|바랍니다|바래요|원합니다|원해요|했으면|으면 좋겠|면 좋겠|해달라|해줬으면)",
+    r"(제발|부탁).{0,20}(해주|바랍|원)",
+    r"(.{2,15})(기능|옵션).{0,5}(추가|넣어|만들어)",
+]
+
+# ----------------------------
 # 유틸리티 함수
 # ----------------------------
 def simple_tokenizer(text):
-    """정규식 기반 한글 토크나이저"""
     tokens = re.findall(r"[가-힣]{2,}", str(text))
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
     return tokens
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_default_data():
-    """
-    디폴트 데이터 로드 (CSV 파일에서)
-    - 네이버 웹툰 리뷰 1000건
-    - 2025.01.19 19:00 기준 데이터
-    """
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "default_reviews.csv")
         df = pd.read_csv(csv_path)
@@ -83,7 +102,6 @@ def load_default_data():
 
 @st.cache_data(ttl=7200, show_spinner=False)
 def get_reviews_cached(app_id, count=1000):
-    """Google Play 리뷰 수집 (캐싱)"""
     result = []
     continuation_token = None
     
@@ -91,15 +109,11 @@ def get_reviews_cached(app_id, count=1000):
         while len(result) < count:
             batch_size = min(100, count - len(result))
             review_batch, continuation_token = reviews(
-                app_id,
-                lang="ko",
-                country="kr",
-                sort=Sort.NEWEST,
-                count=batch_size,
+                app_id, lang="ko", country="kr",
+                sort=Sort.NEWEST, count=batch_size,
                 continuation_token=continuation_token
             )
             result.extend(review_batch)
-            
             if not continuation_token:
                 break
     except Exception as e:
@@ -110,44 +124,133 @@ def get_reviews_cached(app_id, count=1000):
     if not df.empty:
         df["at"] = pd.to_datetime(df["at"])
         df["content"] = df["content"].astype(str)
-    
     return df
 
-@st.cache_data(ttl=7200, show_spinner=False)
-def extract_keywords_cached(contents_tuple):
-    """키워드 추출 (캐싱)"""
-    tokens = []
-    for text in contents_tuple:
-        tokens += simple_tokenizer(text)
-    return tokens
-
-@st.cache_data(ttl=7200, show_spinner=False)
-def generate_wordcloud_image(word_freq_tuple, font_path):
-    """워드클라우드를 이미지로 생성"""
-    word_freq = dict(word_freq_tuple)
+# ----------------------------
+# 분석 함수들
+# ----------------------------
+@st.cache_data(ttl=7200)
+def analyze_sentiment(df):
+    """감성 분석: 긍정/부정 키워드 기반"""
+    results = []
     
+    for _, row in df.iterrows():
+        text = str(row["content"])
+        score = row["score"]
+        
+        pos_count = sum(1 for w in POSITIVE_WORDS if w in text)
+        neg_count = sum(1 for w in NEGATIVE_WORDS if w in text)
+        
+        # 평점 기반 보정
+        if score >= 4:
+            sentiment = "긍정"
+        elif score <= 2:
+            sentiment = "부정"
+        else:
+            if pos_count > neg_count:
+                sentiment = "긍정"
+            elif neg_count > pos_count:
+                sentiment = "부정"
+            else:
+                sentiment = "중립"
+        
+        results.append(sentiment)
+    
+    df = df.copy()
+    df["sentiment"] = results
+    return df
+
+@st.cache_data(ttl=7200)
+def analyze_topics(contents_tuple):
+    """토픽 분류"""
+    topic_counts = {topic: 0 for topic in TOPIC_KEYWORDS.keys()}
+    topic_reviews = {topic: [] for topic in TOPIC_KEYWORDS.keys()}
+    
+    for text in contents_tuple:
+        text = str(text)
+        for topic, keywords in TOPIC_KEYWORDS.items():
+            if any(kw in text for kw in keywords):
+                topic_counts[topic] += 1
+                if len(topic_reviews[topic]) < 10:  # 예시 리뷰 10개만 저장
+                    topic_reviews[topic].append(text[:100] + "..." if len(text) > 100 else text)
+    
+    return topic_counts, topic_reviews
+
+@st.cache_data(ttl=7200)
+def extract_requests(contents_tuple):
+    """요청사항 추출"""
+    requests = []
+    
+    for text in contents_tuple:
+        text = str(text)
+        for pattern in REQUEST_PATTERNS:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                if isinstance(match, tuple):
+                    request_text = "".join(match)
+                else:
+                    request_text = match
+                if len(request_text) > 5:
+                    requests.append(request_text)
+    
+    return Counter(requests).most_common(30)
+
+@st.cache_data(ttl=7200)
+def analyze_complaints(df):
+    """불만 키워드 분석 (1-2점 리뷰)"""
+    negative_df = df[df["score"] <= 2]
+    
+    if negative_df.empty:
+        return [], pd.DataFrame()
+    
+    tokens = []
+    for text in negative_df["content"]:
+        tokens += simple_tokenizer(text)
+    
+    return Counter(tokens).most_common(30), negative_df
+
+@st.cache_data(ttl=7200)
+def analyze_positive(df):
+    """긍정 키워드 분석 (4-5점 리뷰)"""
+    positive_df = df[df["score"] >= 4]
+    
+    if positive_df.empty:
+        return [], pd.DataFrame()
+    
+    tokens = []
+    for text in positive_df["content"]:
+        tokens += simple_tokenizer(text)
+    
+    return Counter(tokens).most_common(30), positive_df
+
+@st.cache_data(ttl=7200)
+def generate_wordcloud_image(word_freq_tuple, font_path):
+    word_freq = dict(word_freq_tuple)
     try:
         wc = WordCloud(
             font_path=font_path,
-            width=800,
-            height=400,
+            width=800, height=400,
             background_color="white",
             colormap="viridis",
             max_words=50
         )
         wc.generate_from_frequencies(word_freq)
-        
         img_buffer = BytesIO()
         wc.to_image().save(img_buffer, format='PNG')
         img_buffer.seek(0)
-        
         return img_buffer.getvalue()
-    except Exception as e:
+    except:
         return None
 
-@st.cache_data(ttl=7200, show_spinner=False)
+@st.cache_data(ttl=7200)
+def extract_keywords_cached(contents_tuple):
+    tokens = []
+    for text in contents_tuple:
+        tokens += simple_tokenizer(text)
+    return tokens
+
+@st.cache_data(ttl=7200)
 def calculate_co_occurrence(contents_tuple):
-    """연관어 계산 (캐싱)"""
     co_occurrence = {}
     for text in contents_tuple:
         tokens = simple_tokenizer(text)
@@ -157,26 +260,27 @@ def calculate_co_occurrence(contents_tuple):
                 co_occurrence.setdefault(a, []).append(b)
     return co_occurrence
 
+# ----------------------------
+# 메인 분석 표시 함수
+# ----------------------------
 def display_analysis(df, app_name="", data_info=""):
-    """분석 결과 표시"""
-    
     if df.empty:
         st.error("❌ 데이터가 없습니다.")
         return
     
-    # 데이터 정보 표시
     if data_info:
         st.info(data_info)
     
     st.success(f"✅ **{len(df):,}건** 리뷰 분석 완료! {f'({app_name})' if app_name else ''}")
     
-    # 키워드 미리 계산
+    # 감성 분석 적용
+    df = analyze_sentiment(df)
     contents_tuple = tuple(df["content"].tolist())
-    tokens = extract_keywords_cached(contents_tuple)
-    counter = Counter(tokens)
     
     # 탭 구성
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 통계", "💬 키워드", "🔗 연관어", "📝 리뷰"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "📈 통계", "😊 감성분석", "📂 토픽분류", "😤 불만분석", "🙏 요청사항", "💬 키워드", "📝 리뷰"
+    ])
     
     # ----------------------------
     # 탭 1: 통계
@@ -189,11 +293,11 @@ def display_analysis(df, app_name="", data_info=""):
         with col2:
             st.metric("평균 평점", f"{df['score'].mean():.1f}⭐")
         with col3:
-            recent = df[df["at"] >= df["at"].max() - pd.Timedelta(days=7)]
-            st.metric("최근 7일", f"{len(recent):,}")
+            pos_ratio = (df["sentiment"] == "긍정").sum() / len(df) * 100
+            st.metric("긍정 비율", f"{pos_ratio:.0f}%")
         with col4:
-            ratio = (df["score"] == 5).sum() / len(df) * 100
-            st.metric("5점 비율", f"{ratio:.0f}%")
+            neg_ratio = (df["sentiment"] == "부정").sum() / len(df) * 100
+            st.metric("부정 비율", f"{neg_ratio:.0f}%")
         
         st.markdown("---")
         
@@ -209,40 +313,182 @@ def display_analysis(df, app_name="", data_info=""):
             st.bar_chart(scores)
     
     # ----------------------------
-    # 탭 2: 키워드
+    # 탭 2: 감성 분석
     # ----------------------------
     with tab2:
-        st.subheader("💬 주요 키워드 TOP 30")
+        st.subheader("😊 감성 분석 결과")
         
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            sentiment_counts = df["sentiment"].value_counts()
+            st.markdown("#### 감성 분포")
+            
+            for sentiment, count in sentiment_counts.items():
+                pct = count / len(df) * 100
+                if sentiment == "긍정":
+                    st.success(f"😊 긍정: **{count:,}건** ({pct:.1f}%)")
+                elif sentiment == "부정":
+                    st.error(f"😤 부정: **{count:,}건** ({pct:.1f}%)")
+                else:
+                    st.warning(f"😐 중립: **{count:,}건** ({pct:.1f}%)")
+        
+        with col2:
+            st.markdown("#### 평점별 감성")
+            sentiment_by_score = df.groupby(["score", "sentiment"]).size().unstack(fill_value=0)
+            st.dataframe(sentiment_by_score, use_container_width=True)
+        
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 😊 긍정 리뷰 키워드")
+            pos_keywords, _ = analyze_positive(df)
+            if pos_keywords:
+                pos_df = pd.DataFrame(pos_keywords[:15], columns=["키워드", "빈도"])
+                st.dataframe(pos_df, use_container_width=True, hide_index=True)
+        
+        with col2:
+            st.markdown("#### 😤 부정 리뷰 키워드")
+            neg_keywords, _ = analyze_complaints(df)
+            if neg_keywords:
+                neg_df = pd.DataFrame(neg_keywords[:15], columns=["키워드", "빈도"])
+                st.dataframe(neg_df, use_container_width=True, hide_index=True)
+    
+    # ----------------------------
+    # 탭 3: 토픽 분류
+    # ----------------------------
+    with tab3:
+        st.subheader("📂 토픽별 리뷰 분류")
+        st.caption("리뷰가 어떤 주제에 대해 이야기하는지 분류합니다.")
+        
+        topic_counts, topic_reviews = analyze_topics(contents_tuple)
+        
+        # 토픽 정렬 (많은 순)
+        sorted_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.markdown("#### 토픽별 언급량")
+            topic_df = pd.DataFrame(sorted_topics, columns=["토픽", "건수"])
+            st.dataframe(topic_df, use_container_width=True, hide_index=True)
+        
+        with col2:
+            st.markdown("#### 토픽 비율")
+            # 간단한 바 차트
+            chart_data = pd.DataFrame(sorted_topics, columns=["토픽", "건수"]).set_index("토픽")
+            st.bar_chart(chart_data)
+        
+        st.markdown("---")
+        st.markdown("#### 📋 토픽별 예시 리뷰")
+        
+        selected_topic = st.selectbox("토픽 선택", [t[0] for t in sorted_topics])
+        
+        if topic_reviews[selected_topic]:
+            for i, review in enumerate(topic_reviews[selected_topic][:5], 1):
+                st.text(f"{i}. {review}")
+        else:
+            st.info("해당 토픽의 리뷰가 없습니다.")
+    
+    # ----------------------------
+    # 탭 4: 불만 분석
+    # ----------------------------
+    with tab4:
+        st.subheader("😤 불만 사항 집중 분석")
+        st.caption("1~2점 리뷰에서 사용자들이 불만을 느끼는 포인트를 분석합니다.")
+        
+        neg_keywords, neg_df = analyze_complaints(df)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(f"#### 불만 리뷰 수: **{len(neg_df):,}건**")
+            if neg_keywords:
+                st.markdown("#### 🔥 불만 키워드 TOP 20")
+                neg_kw_df = pd.DataFrame(neg_keywords[:20], columns=["키워드", "빈도"])
+                st.dataframe(neg_kw_df, use_container_width=True, hide_index=True)
+        
+        with col2:
+            st.markdown("#### 워드클라우드")
+            if neg_keywords:
+                img = generate_wordcloud_image(tuple(neg_keywords[:30]), FONT_PATH)
+                if img:
+                    st.image(img, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("#### 📋 불만 리뷰 원문 (최근 20건)")
+        
+        if not neg_df.empty:
+            display_neg = neg_df.head(20)[["at", "score", "content"]].copy()
+            display_neg["at"] = display_neg["at"].dt.strftime("%Y-%m-%d")
+            display_neg.columns = ["날짜", "평점", "내용"]
+            st.dataframe(display_neg, use_container_width=True, hide_index=True)
+    
+    # ----------------------------
+    # 탭 5: 요청사항
+    # ----------------------------
+    with tab5:
+        st.subheader("🙏 사용자 요청사항 추출")
+        st.caption("'~해주세요', '~했으면 좋겠어요' 등의 패턴에서 사용자 니즈를 추출합니다.")
+        
+        requests = extract_requests(contents_tuple)
+        
+        if requests:
+            st.markdown(f"#### 총 **{len(requests)}개** 요청사항 발견")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📌 주요 요청사항")
+                req_df = pd.DataFrame(requests[:15], columns=["요청 내용", "언급 횟수"])
+                st.dataframe(req_df, use_container_width=True, hide_index=True)
+            
+            with col2:
+                st.markdown("#### 📊 요청 빈도")
+                req_chart = pd.DataFrame(requests[:10], columns=["요청", "횟수"]).set_index("요청")
+                st.bar_chart(req_chart)
+            
+            st.markdown("---")
+            st.markdown("#### 💡 인사이트")
+            
+            if requests:
+                top_requests = [r[0] for r in requests[:5]]
+                st.markdown("**사용자들이 가장 원하는 것:**")
+                for i, req in enumerate(top_requests, 1):
+                    st.markdown(f"{i}. {req}")
+        else:
+            st.info("추출된 요청사항이 없습니다.")
+    
+    # ----------------------------
+    # 탭 6: 키워드
+    # ----------------------------
+    with tab6:
+        st.subheader("💬 전체 키워드 분석")
+        
+        tokens = extract_keywords_cached(contents_tuple)
+        counter = Counter(tokens)
         common_words = counter.most_common(30)
         
         if common_words:
-            word_freq_tuple = tuple(common_words)
-            img_bytes = generate_wordcloud_image(word_freq_tuple, FONT_PATH)
+            col1, col2 = st.columns([2, 1])
             
-            if img_bytes:
-                st.image(img_bytes, use_container_width=True)
-            else:
-                st.warning("워드클라우드 생성 불가. 아래 표를 확인하세요.")
-            
-            keyword_df = pd.DataFrame(common_words, columns=["키워드", "빈도"])
-            
-            col1, col2 = st.columns(2)
             with col1:
-                st.dataframe(keyword_df.head(15), use_container_width=True, hide_index=True)
+                img_bytes = generate_wordcloud_image(tuple(common_words), FONT_PATH)
+                if img_bytes:
+                    st.image(img_bytes, use_container_width=True)
+            
             with col2:
-                st.dataframe(keyword_df.tail(15), use_container_width=True, hide_index=True)
-    
-    # ----------------------------
-    # 탭 3: 연관어
-    # ----------------------------
-    with tab3:
-        st.subheader("🔗 키워드 연관 단어")
+                keyword_df = pd.DataFrame(common_words, columns=["키워드", "빈도"])
+                st.dataframe(keyword_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        st.markdown("#### 🔗 연관 키워드")
         
         co_occurrence = calculate_co_occurrence(contents_tuple)
-        
         related_words = []
-        for k, v in counter.most_common(20):
+        for k, v in counter.most_common(15):
             related = Counter(co_occurrence.get(k, [])).most_common(5)
             related_words.append({
                 "키워드": k,
@@ -253,26 +499,28 @@ def display_analysis(df, app_name="", data_info=""):
         st.dataframe(pd.DataFrame(related_words), use_container_width=True, hide_index=True)
     
     # ----------------------------
-    # 탭 4: 리뷰 원문
+    # 탭 7: 리뷰 원문
     # ----------------------------
-    with tab4:
+    with tab7:
         st.subheader("📝 리뷰 원문")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             score_filter = st.multiselect("평점", [1,2,3,4,5], default=[1,2,3,4,5])
         with col2:
+            sentiment_filter = st.multiselect("감성", ["긍정", "중립", "부정"], default=["긍정", "중립", "부정"])
+        with col3:
             keyword = st.text_input("검색")
         
-        filtered = df[df["score"].isin(score_filter)]
+        filtered = df[df["score"].isin(score_filter) & df["sentiment"].isin(sentiment_filter)]
         if keyword:
             filtered = filtered[filtered["content"].str.contains(keyword, na=False)]
         
         st.write(f"**{len(filtered):,}건**")
         
-        display_df = filtered.head(100)[["at", "score", "content"]].copy()
+        display_df = filtered.head(100)[["at", "score", "sentiment", "content"]].copy()
         display_df["at"] = display_df["at"].dt.strftime("%Y-%m-%d")
-        display_df.columns = ["날짜", "평점", "내용"]
+        display_df.columns = ["날짜", "평점", "감성", "내용"]
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 # ----------------------------
@@ -281,15 +529,11 @@ def display_analysis(df, app_name="", data_info=""):
 st.title("📊 경쟁사 앱 리뷰 분석 대시보드")
 st.caption("Google Play Store 리뷰를 분석하여 경쟁사 인사이트를 도출합니다.")
 
-# ----------------------------
 # 사이드바
-# ----------------------------
 with st.sidebar:
     st.header("⚙️ 설정")
-    
     st.markdown("---")
     
-    # 모드 선택
     mode = st.radio(
         "분석 모드",
         ["📌 기본 데이터 보기", "🔄 새로 수집하기"],
@@ -298,58 +542,28 @@ with st.sidebar:
     
     if mode == "🔄 새로 수집하기":
         st.markdown("---")
-        
-        # 앱 선택
-        selected_app = st.selectbox(
-            "앱 선택",
-            options=list(APP_LIST.keys()),
-            index=0
-        )
-        
-        # 또는 직접 입력
-        custom_app_id = st.text_input(
-            "또는 앱 ID 직접 입력",
-            placeholder="com.example.app"
-        )
-        
-        review_count = st.select_slider(
-            "수집할 리뷰 수",
-            options=[100, 300, 500, 700, 1000],
-            value=500
-        )
-        
+        selected_app = st.selectbox("앱 선택", list(APP_LIST.keys()))
+        custom_app_id = st.text_input("또는 앱 ID 직접 입력", placeholder="com.example.app")
+        review_count = st.select_slider("수집할 리뷰 수", options=[100, 300, 500, 700, 1000], value=500)
         collect_btn = st.button("🔍 데이터 수집", type="primary", use_container_width=True)
     else:
         collect_btn = False
     
     st.markdown("---")
-    st.markdown("##### 📌 지원 앱 목록")
+    st.markdown("##### 📌 지원 앱")
     for name in APP_LIST.keys():
         st.caption(f"• {name}")
 
-# ----------------------------
 # 메인 콘텐츠
-# ----------------------------
 if mode == "📌 기본 데이터 보기":
-    
     with st.spinner("📥 기본 데이터 로딩 중..."):
         df = load_default_data()
-    
-    display_analysis(
-        df, 
-        app_name="네이버 웹툰",
-        data_info="📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 19:00 기준)"
-    )
+    display_analysis(df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
-else:  # 새로 수집하기
+else:
     if collect_btn:
-        # 앱 ID 결정
-        if custom_app_id:
-            app_id = custom_app_id
-            app_name = custom_app_id
-        else:
-            app_id = APP_LIST[selected_app]
-            app_name = selected_app
+        app_id = custom_app_id if custom_app_id else APP_LIST[selected_app]
+        app_name = custom_app_id if custom_app_id else selected_app
         
         with st.spinner(f"📥 {app_name} 리뷰 수집 중... ({review_count}건)"):
             df = get_reviews_cached(app_id, count=review_count)
@@ -357,24 +571,10 @@ else:  # 새로 수집하기
             st.session_state["collected_df"] = df
             st.session_state["collected_app"] = app_name
     
-    # 수집된 데이터가 있으면 표시
     if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
-        df = st.session_state["collected_df"]
-        app_name = st.session_state.get("collected_app", "")
-        display_analysis(df, app_name)
+        display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
     else:
         st.info("👈 사이드바에서 앱을 선택하고 **데이터 수집** 버튼을 클릭하세요!")
-        
-        st.markdown("""
-        ### 🎯 분석 가능 항목
-        - 📈 **통계**: 평점 분포, 날짜별 추이
-        - 💬 **키워드**: 자주 언급되는 단어 TOP 30
-        - 🔗 **연관어**: 키워드 간 관계 분석
-        - 📝 **리뷰 원문**: 필터링 & 검색
-        """)
 
-# ----------------------------
-# 푸터
-# ----------------------------
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
