@@ -99,6 +99,15 @@ def extract_bigrams(text):
         bigrams.append(bigram)
     return bigrams
 
+def extract_trigrams(text):
+    """키워드 조합 (트리그램 - 3단어) 추출"""
+    tokens = simple_tokenizer(text)
+    trigrams = []
+    for i in range(len(tokens) - 2):
+        trigram = f"{tokens[i]} + {tokens[i+1]} + {tokens[i+2]}"
+        trigrams.append(trigram)
+    return trigrams
+
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_default_data():
     try:
@@ -215,32 +224,34 @@ def extract_requests(contents_tuple):
     return Counter(requests).most_common(30)
 
 @st.cache_data(ttl=7200)
-def analyze_complaints_bigram(df):
-    """불만 키워드 조합 분석 (1-2점 리뷰, 바이그램)"""
+def analyze_complaints_trigram(df):
+    """불만 키워드 조합 분석 (1-2점 리뷰, 트리그램 - 3단어 조합)"""
     negative_df = df[df["score"] <= 2]
     
     if negative_df.empty:
-        return [], pd.DataFrame()
+        return [], [], pd.DataFrame()
     
     bigrams = []
+    trigrams = []
     for text in negative_df["content"]:
         bigrams += extract_bigrams(text)
+        trigrams += extract_trigrams(text)
     
-    return Counter(bigrams).most_common(30), negative_df
+    return Counter(bigrams).most_common(30), Counter(trigrams).most_common(30), negative_df
 
 @st.cache_data(ttl=7200)
-def analyze_positive(df):
-    """긍정 키워드 분석 (4-5점 리뷰)"""
+def analyze_positive_bigram(df):
+    """긍정 키워드 조합 분석 (4-5점 리뷰, 바이그램)"""
     positive_df = df[df["score"] >= 4]
     
     if positive_df.empty:
         return [], pd.DataFrame()
     
-    tokens = []
+    bigrams = []
     for text in positive_df["content"]:
-        tokens += simple_tokenizer(text)
+        bigrams += extract_bigrams(text)
     
-    return Counter(tokens).most_common(30), positive_df
+    return Counter(bigrams).most_common(30), positive_df
 
 @st.cache_data(ttl=7200)
 def generate_wordcloud_image(word_freq_tuple, font_path):
@@ -362,15 +373,15 @@ def display_analysis(df, app_name="", data_info=""):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 😊 긍정 리뷰 키워드")
-            pos_keywords, _ = analyze_positive(df)
-            if pos_keywords:
-                pos_df = pd.DataFrame(pos_keywords[:15], columns=["키워드", "빈도"])
+            st.markdown("#### 😊 긍정 리뷰 키워드 조합")
+            pos_bigrams, _ = analyze_positive_bigram(df)
+            if pos_bigrams:
+                pos_df = pd.DataFrame(pos_bigrams[:15], columns=["키워드 조합", "빈도"])
                 st.dataframe(pos_df, use_container_width=True, hide_index=True)
         
         with col2:
             st.markdown("#### 😤 부정 리뷰 키워드 조합")
-            neg_bigrams, _ = analyze_complaints_bigram(df)
+            neg_bigrams, neg_trigrams, _ = analyze_complaints_trigram(df)
             if neg_bigrams:
                 neg_df = pd.DataFrame(neg_bigrams[:15], columns=["키워드 조합", "빈도"])
                 st.dataframe(neg_df, use_container_width=True, hide_index=True)
@@ -418,7 +429,7 @@ def display_analysis(df, app_name="", data_info=""):
         st.subheader("😤 불만 사항 집중 분석")
         st.caption("1~2점 리뷰에서 키워드 조합을 분석하여 구체적인 불만 포인트를 파악합니다.")
         
-        neg_bigrams, neg_df = analyze_complaints_bigram(df)
+        neg_bigrams, neg_trigrams, neg_df = analyze_complaints_trigram(df)
         
         st.markdown(f"#### 🔴 불만 리뷰 수: **{len(neg_df):,}건** ({len(neg_df)/len(df)*100:.1f}%)")
         
@@ -427,27 +438,52 @@ def display_analysis(df, app_name="", data_info=""):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 🔥 불만 키워드 조합 TOP 20")
+            st.markdown("#### 🔥 불만 키워드 조합 (2단어)")
             st.caption("어떤 단어들이 함께 언급되는지 파악합니다.")
             if neg_bigrams:
-                neg_df_display = pd.DataFrame(neg_bigrams[:20], columns=["키워드 조합", "빈도"])
-                st.dataframe(neg_df_display, use_container_width=True, hide_index=True)
+                neg_bigram_df = pd.DataFrame(neg_bigrams[:20], columns=["키워드 조합", "빈도"])
+                st.dataframe(neg_bigram_df, use_container_width=True, hide_index=True)
         
         with col2:
-            st.markdown("#### 💡 주요 불만 패턴 해석")
+            st.markdown("#### 🔥 불만 맥락 파악 (3단어)")
+            st.caption("더 구체적인 맥락을 파악합니다. 예: '앱 + 껐다 + 켜도'")
+            if neg_trigrams:
+                neg_trigram_df = pd.DataFrame(neg_trigrams[:20], columns=["키워드 조합", "빈도"])
+                st.dataframe(neg_trigram_df, use_container_width=True, hide_index=True)
+        
+        st.markdown("---")
+        st.markdown("#### 💡 주요 불만 패턴 해석")
+        
+        col1, col2 = st.columns(2)
+        with col1:
             if neg_bigrams:
-                st.markdown("**가장 많이 언급된 불만:**")
+                st.markdown("**2단어 조합 TOP 5:**")
                 for i, (bigram, count) in enumerate(neg_bigrams[:5], 1):
                     st.markdown(f"{i}. **{bigram}** ({count}회)")
         
+        with col2:
+            if neg_trigrams:
+                st.markdown("**3단어 조합 TOP 5:**")
+                for i, (trigram, count) in enumerate(neg_trigrams[:5], 1):
+                    st.markdown(f"{i}. **{trigram}** ({count}회)")
+        
         st.markdown("---")
-        st.markdown("#### 📋 불만 리뷰 원문 (최근 20건)")
+        st.markdown(f"#### 📋 불만 리뷰 원문 (전체 {len(neg_df):,}건)")
         
         if not neg_df.empty:
-            display_neg = neg_df.head(20)[["at", "score", "content"]].copy()
+            # 검색 필터
+            search_complaint = st.text_input("🔍 불만 리뷰 내 검색", key="complaint_search")
+            
+            filtered_neg = neg_df.copy()
+            if search_complaint:
+                filtered_neg = filtered_neg[filtered_neg["content"].str.contains(search_complaint, na=False)]
+            
+            st.write(f"**{len(filtered_neg):,}건** 표시")
+            
+            display_neg = filtered_neg[["at", "score", "content"]].copy()
             display_neg["at"] = display_neg["at"].dt.strftime("%Y-%m-%d")
             display_neg.columns = ["날짜", "평점", "내용"]
-            st.dataframe(display_neg, use_container_width=True, hide_index=True)
+            st.dataframe(display_neg, use_container_width=True, hide_index=True, height=400)
     
     # ----------------------------
     # 탭 5: 요청사항
