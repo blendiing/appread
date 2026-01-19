@@ -51,18 +51,19 @@ STOPWORDS = {
     "해서", "하고", "해요", "합니다", "입니다", "있어요", "없어요", "같아요",
     "이런", "저런", "그런", "어떤", "무슨", "왜", "어디", "언제", "어떻게",
     "근데", "그래서", "하지만", "그러나", "그리고", "또한", "그래도",
-    "있어", "없어", "하면", "이용", "사용", "정도", "이상", "계속", "다시", "처음", "마지막"
+    "있어", "없어", "하면", "이용", "사용", "정도", "이상", "계속", "다시", "처음", "마지막",
+    "네이버", "웹툰", "쿠키", "만화", "작품", "좋아", "읽고", "보고", "해서", "하고"
 }
 
 # ----------------------------
 # 토픽 키워드 정의
 # ----------------------------
 TOPIC_KEYWORDS = {
-    "💰 결제/가격": ["결제", "돈", "유료", "무료", "가격", "비싸", "비용", "쿠키", "코인", "충전", "환불", "구매", "구독", "이용권", "할인", "캐시"],
-    "📱 UI/UX": ["화면", "버튼", "디자인", "인터페이스", "메뉴", "불편", "편리", "직관", "레이아웃", "구성", "위치", "아이콘", "색상", "폰트", "글씨"],
-    "🐛 버그/오류": ["버그", "오류", "에러", "렉", "튕김", "멈춤", "안됨", "안돼", "작동", "느림", "로딩", "다운", "꺼짐", "강제종료", "crash"],
-    "📺 광고": ["광고", "배너", "팝업", "스킵", "건너뛰기", "동영상광고", "전면광고"],
-    "📚 콘텐츠": ["작품", "웹툰", "만화", "소설", "작가", "연재", "완결", "스토리", "내용", "재미", "그림", "퀄리티", "업데이트", "신작", "추천"],
+    "💰 결제/가격": ["결제", "돈", "유료", "무료", "가격", "비싸", "비용", "코인", "충전", "환불", "구매", "구독", "이용권", "할인", "캐시", "쿠키"],
+    "📱 UI/UX": ["화면", "버튼", "디자인", "인터페이스", "메뉴", "불편", "편리", "직관", "레이아웃", "구성", "위치", "아이콘", "색상", "폰트", "글씨", "스크롤"],
+    "🐛 버그/오류": ["버그", "오류", "에러", "렉", "튕김", "멈춤", "안됨", "안돼", "작동", "느림", "로딩", "다운", "꺼짐", "강제종료", "crash", "팅김"],
+    "📺 광고": ["광고", "배너", "팝업", "스킵", "건너뛰기", "동영상광고", "전면광고", "광고가"],
+    "📚 콘텐츠": ["작품", "연재", "완결", "스토리", "내용", "재미", "그림", "퀄리티", "업데이트", "신작", "추천", "작가", "회차"],
     "🔔 알림/편의": ["알림", "푸시", "북마크", "저장", "기록", "목록", "검색", "정렬", "필터", "공유", "다운로드", "오프라인"],
 }
 
@@ -88,6 +89,15 @@ def simple_tokenizer(text):
     tokens = re.findall(r"[가-힣]{2,}", str(text))
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
     return tokens
+
+def extract_bigrams(text):
+    """키워드 조합 (바이그램) 추출"""
+    tokens = simple_tokenizer(text)
+    bigrams = []
+    for i in range(len(tokens) - 1):
+        bigram = f"{tokens[i]} + {tokens[i+1]}"
+        bigrams.append(bigram)
+    return bigrams
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_default_data():
@@ -131,7 +141,7 @@ def get_reviews_cached(app_id, count=1000):
 # ----------------------------
 @st.cache_data(ttl=7200)
 def analyze_sentiment(df):
-    """감성 분석: 긍정/부정 키워드 기반"""
+    """감성 분석"""
     results = []
     
     for _, row in df.iterrows():
@@ -141,7 +151,6 @@ def analyze_sentiment(df):
         pos_count = sum(1 for w in POSITIVE_WORDS if w in text)
         neg_count = sum(1 for w in NEGATIVE_WORDS if w in text)
         
-        # 평점 기반 보정
         if score >= 4:
             sentiment = "긍정"
         elif score <= 2:
@@ -162,19 +171,16 @@ def analyze_sentiment(df):
 
 @st.cache_data(ttl=7200)
 def analyze_topics(contents_tuple):
-    """토픽 분류"""
-    topic_counts = {topic: 0 for topic in TOPIC_KEYWORDS.keys()}
-    topic_reviews = {topic: [] for topic in TOPIC_KEYWORDS.keys()}
+    """토픽 분류 - 리뷰별로 분류"""
+    topic_data = {topic: [] for topic in TOPIC_KEYWORDS.keys()}
     
     for text in contents_tuple:
         text = str(text)
         for topic, keywords in TOPIC_KEYWORDS.items():
             if any(kw in text for kw in keywords):
-                topic_counts[topic] += 1
-                if len(topic_reviews[topic]) < 10:  # 예시 리뷰 10개만 저장
-                    topic_reviews[topic].append(text[:100] + "..." if len(text) > 100 else text)
+                topic_data[topic].append(text)
     
-    return topic_counts, topic_reviews
+    return topic_data
 
 @st.cache_data(ttl=7200)
 def extract_requests(contents_tuple):
@@ -196,18 +202,18 @@ def extract_requests(contents_tuple):
     return Counter(requests).most_common(30)
 
 @st.cache_data(ttl=7200)
-def analyze_complaints(df):
-    """불만 키워드 분석 (1-2점 리뷰)"""
+def analyze_complaints_bigram(df):
+    """불만 키워드 조합 분석 (1-2점 리뷰, 바이그램)"""
     negative_df = df[df["score"] <= 2]
     
     if negative_df.empty:
         return [], pd.DataFrame()
     
-    tokens = []
+    bigrams = []
     for text in negative_df["content"]:
-        tokens += simple_tokenizer(text)
+        bigrams += extract_bigrams(text)
     
-    return Counter(tokens).most_common(30), negative_df
+    return Counter(bigrams).most_common(30), negative_df
 
 @st.cache_data(ttl=7200)
 def analyze_positive(df):
@@ -350,72 +356,76 @@ def display_analysis(df, app_name="", data_info=""):
                 st.dataframe(pos_df, use_container_width=True, hide_index=True)
         
         with col2:
-            st.markdown("#### 😤 부정 리뷰 키워드")
-            neg_keywords, _ = analyze_complaints(df)
-            if neg_keywords:
-                neg_df = pd.DataFrame(neg_keywords[:15], columns=["키워드", "빈도"])
+            st.markdown("#### 😤 부정 리뷰 키워드 조합")
+            neg_bigrams, _ = analyze_complaints_bigram(df)
+            if neg_bigrams:
+                neg_df = pd.DataFrame(neg_bigrams[:15], columns=["키워드 조합", "빈도"])
                 st.dataframe(neg_df, use_container_width=True, hide_index=True)
     
     # ----------------------------
-    # 탭 3: 토픽 분류
+    # 탭 3: 토픽 분류 (세로 나열)
     # ----------------------------
     with tab3:
         st.subheader("📂 토픽별 리뷰 분류")
         st.caption("리뷰가 어떤 주제에 대해 이야기하는지 분류합니다.")
         
-        topic_counts, topic_reviews = analyze_topics(contents_tuple)
+        topic_data = analyze_topics(contents_tuple)
         
-        # 토픽 정렬 (많은 순)
-        sorted_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)
+        # 토픽별 개수 정렬
+        sorted_topics = sorted(topic_data.items(), key=lambda x: len(x[1]), reverse=True)
         
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.markdown("#### 토픽별 언급량")
-            topic_df = pd.DataFrame(sorted_topics, columns=["토픽", "건수"])
-            st.dataframe(topic_df, use_container_width=True, hide_index=True)
-        
-        with col2:
-            st.markdown("#### 토픽 비율")
-            # 간단한 바 차트
-            chart_data = pd.DataFrame(sorted_topics, columns=["토픽", "건수"]).set_index("토픽")
-            st.bar_chart(chart_data)
+        # 전체 요약
+        st.markdown("#### 📊 토픽별 언급량 요약")
+        summary_data = []
+        for topic, reviews_list in sorted_topics:
+            summary_data.append({"토픽": topic, "건수": len(reviews_list), "비율": f"{len(reviews_list)/len(df)*100:.1f}%"})
+        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
         
         st.markdown("---")
-        st.markdown("#### 📋 토픽별 예시 리뷰")
         
-        selected_topic = st.selectbox("토픽 선택", [t[0] for t in sorted_topics])
-        
-        if topic_reviews[selected_topic]:
-            for i, review in enumerate(topic_reviews[selected_topic][:5], 1):
-                st.text(f"{i}. {review}")
-        else:
-            st.info("해당 토픽의 리뷰가 없습니다.")
+        # 카테고리별 세로 나열
+        for topic, reviews_list in sorted_topics:
+            with st.expander(f"{topic} ({len(reviews_list):,}건)", expanded=False):
+                if reviews_list:
+                    # 해당 토픽 키워드 표시
+                    keywords = TOPIC_KEYWORDS[topic]
+                    st.caption(f"🔑 관련 키워드: {', '.join(keywords[:10])}")
+                    
+                    st.markdown("**📋 대표 리뷰:**")
+                    for i, review in enumerate(reviews_list[:10], 1):
+                        truncated = review[:150] + "..." if len(review) > 150 else review
+                        st.text(f"{i}. {truncated}")
+                else:
+                    st.info("해당 토픽의 리뷰가 없습니다.")
     
     # ----------------------------
-    # 탭 4: 불만 분석
+    # 탭 4: 불만 분석 (키워드 조합)
     # ----------------------------
     with tab4:
         st.subheader("😤 불만 사항 집중 분석")
-        st.caption("1~2점 리뷰에서 사용자들이 불만을 느끼는 포인트를 분석합니다.")
+        st.caption("1~2점 리뷰에서 키워드 조합을 분석하여 구체적인 불만 포인트를 파악합니다.")
         
-        neg_keywords, neg_df = analyze_complaints(df)
+        neg_bigrams, neg_df = analyze_complaints_bigram(df)
+        
+        st.markdown(f"#### 🔴 불만 리뷰 수: **{len(neg_df):,}건** ({len(neg_df)/len(df)*100:.1f}%)")
+        
+        st.markdown("---")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown(f"#### 불만 리뷰 수: **{len(neg_df):,}건**")
-            if neg_keywords:
-                st.markdown("#### 🔥 불만 키워드 TOP 20")
-                neg_kw_df = pd.DataFrame(neg_keywords[:20], columns=["키워드", "빈도"])
-                st.dataframe(neg_kw_df, use_container_width=True, hide_index=True)
+            st.markdown("#### 🔥 불만 키워드 조합 TOP 20")
+            st.caption("어떤 단어들이 함께 언급되는지 파악합니다.")
+            if neg_bigrams:
+                neg_df_display = pd.DataFrame(neg_bigrams[:20], columns=["키워드 조합", "빈도"])
+                st.dataframe(neg_df_display, use_container_width=True, hide_index=True)
         
         with col2:
-            st.markdown("#### 워드클라우드")
-            if neg_keywords:
-                img = generate_wordcloud_image(tuple(neg_keywords[:30]), FONT_PATH)
-                if img:
-                    st.image(img, use_container_width=True)
+            st.markdown("#### 💡 주요 불만 패턴 해석")
+            if neg_bigrams:
+                st.markdown("**가장 많이 언급된 불만:**")
+                for i, (bigram, count) in enumerate(neg_bigrams[:5], 1):
+                    st.markdown(f"{i}. **{bigram}** ({count}회)")
         
         st.markdown("---")
         st.markdown("#### 📋 불만 리뷰 원문 (최근 20건)")
@@ -451,7 +461,7 @@ def display_analysis(df, app_name="", data_info=""):
                 st.bar_chart(req_chart)
             
             st.markdown("---")
-            st.markdown("#### 💡 인사이트")
+            st.markdown("#### 💡 핵심 인사이트")
             
             if requests:
                 top_requests = [r[0] for r in requests[:5]]
