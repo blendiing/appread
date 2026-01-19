@@ -10,7 +10,7 @@ import re
 # 페이지 설정
 # ----------------------------
 st.set_page_config(
-    page_title="네이버 웹툰 앱리뷰 분석",
+    page_title="웹툰 앱리뷰 분석",
     page_icon="📊",
     layout="wide"
 )
