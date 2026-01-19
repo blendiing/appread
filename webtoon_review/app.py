@@ -5,19 +5,36 @@ from collections import Counter
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import re
+import urllib.request
+import os
 
 # ----------------------------
 # 페이지 설정
 # ----------------------------
 st.set_page_config(
-    page_title="웹툰 앱리뷰 분석",
+    page_title="네이버 웹툰 앱리뷰 분석",
     page_icon="📊",
     layout="wide"
 )
 
 # ----------------------------
-# 한글 처리를 위한 간단한 토크나이저 (KoNLPy 대체)
-# Streamlit Cloud에서 Java 설치가 어려우므로 정규식 기반으로 처리
+# 한글 폰트 다운로드 함수
+# ----------------------------
+@st.cache_resource
+def get_font_path():
+    """한글 폰트 다운로드 및 경로 반환"""
+    font_url = "https://github.com/googlefonts/nanum/raw/main/fonts/NanumGothic-Regular.ttf"
+    font_path = "/tmp/NanumGothic.ttf"
+    
+    if not os.path.exists(font_path):
+        try:
+            urllib.request.urlretrieve(font_url, font_path)
+        except:
+            return None
+    return font_path
+
+# ----------------------------
+# 한글 처리를 위한 간단한 토크나이저
 # ----------------------------
 
 # 불용어 정의
@@ -32,9 +49,7 @@ STOPWORDS = {
 
 def simple_tokenizer(text):
     """정규식 기반 한글 토크나이저"""
-    # 한글 2글자 이상 단어 추출
     tokens = re.findall(r"[가-힣]{2,}", str(text))
-    # 불용어 제거
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
     return tokens
 
@@ -75,7 +90,7 @@ def extract_keywords(df):
 # ----------------------------
 # 메인 UI
 # ----------------------------
-st.title("📊 웹툰 앱 리뷰 분석 대시보드")
+st.title("📊 네이버 웹툰 앱 리뷰 분석 대시보드")
 st.markdown("Google Play Store 리뷰를 실시간으로 수집하고 분석합니다.")
 
 # 사이드바 설정
@@ -171,27 +186,10 @@ if analyze_btn or "df" in st.session_state:
             if common_words:
                 # 워드클라우드
                 try:
-                    # 시스템 폰트 찾기
-                    import matplotlib.font_manager as fm
-                    font_path = None
-                    
-                    # 가능한 한글 폰트 경로들
-                    possible_fonts = [
-                        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-                        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-                    ]
-                    
-                    for fp in possible_fonts:
-                        try:
-                            if fm.FontProperties(fname=fp):
-                                font_path = fp
-                                break
-                        except:
-                            continue
+                    font_path = get_font_path()
                     
                     wordcloud = WordCloud(
-                        font_path="/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                        font_path=font_path,
                         width=800,
                         height=400,
                         background_color="white",
