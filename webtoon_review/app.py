@@ -191,7 +191,7 @@ if analyze_btn or "df" in st.session_state:
                             continue
                     
                     wordcloud = WordCloud(
-                        font_path=font_path,
+                        font_path=None,
                         width=800,
                         height=400,
                         background_color="white",
