@@ -607,30 +607,29 @@ def display_analysis(df, app_name="", data_info=""):
     with col2:
         webtoon_mode = st.toggle("🎨 웹툰 특화 분석", value=True, help=webtoon_help)
     
-    # 감성 분석: 이미 있으면 스킵, 없거나 모드 변경 시에만 분석
-    has_sentiment = "sentiment" in df.columns
-    cache_key = f"analyzed_{data_key}_{'webtoon' if webtoon_mode else 'basic'}"
+    # 감성 분석: 이미 sentiment 컬럼이 있으면 그대로 사용
+    if "sentiment" not in df.columns:
+        # sentiment 없을 때만 분석 (새로 수집한 데이터)
+        cache_key = f"analyzed_{data_key}_{'webtoon' if webtoon_mode else 'basic'}"
+        if cache_key in st.session_state:
+            df = st.session_state[cache_key]
+        else:
+            with st.spinner("🔄 감성 분석 중..."):
+                if webtoon_mode:
+                    df = analyze_sentiment_webtoon(df)
+                else:
+                    df = analyze_sentiment_basic(df)
+                st.session_state[cache_key] = df
     
-    if has_sentiment and webtoon_mode:
-        # 기본 데이터는 이미 웹툰 모드로 분석됨 - 그대로 사용
-        pass
-    elif cache_key in st.session_state:
-        # 캐시에 있으면 사용
-        df = st.session_state[cache_key]
-    else:
-        # 새로 분석 필요
-        with st.spinner("🔄 감성 분석 중..."):
-            if webtoon_mode:
-                df = analyze_sentiment_webtoon(df)
-            else:
-                df = analyze_sentiment_basic(df)
-            st.session_state[cache_key] = df
+    # datetime 변환 확인
+    if not pd.api.types.is_datetime64_any_dtype(df["at"]):
+        df["at"] = pd.to_datetime(df["at"])
     
     contents_tuple = tuple(df["content"].tolist())
     
-    # 탭 구성 (5개)
+    # 탭 구성 (5개) - 순서: 통계, 토픽, 키워드, 요청/리뷰, 감성/불만
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📈 통계", "😊 감성/불만", "📂 토픽분류", "🔎 키워드분석", "🙏 요청/리뷰"
+        "📈 통계", "📂 토픽분류", "🔎 키워드분석", "🙏 요청/리뷰", "😊 감성/불만"
     ])
     
     # ----------------------------
@@ -664,9 +663,9 @@ def display_analysis(df, app_name="", data_info=""):
             st.bar_chart(scores)
     
     # ----------------------------
-    # 탭 2: 감성/불만 분석 (통합)
+    # 탭 5: 감성/불만 분석 (통합)
     # ----------------------------
-    with tab2:
+    with tab5:
         # 감성 분석 섹션
         st.markdown("### 😊 감성 분석")
         
@@ -750,9 +749,9 @@ def display_analysis(df, app_name="", data_info=""):
             st.dataframe(display_neg, use_container_width=True, hide_index=True, height=300)
     
     # ----------------------------
-    # 탭 3: 토픽분류
+    # 탭 2: 토픽분류
     # ----------------------------
-    with tab3:
+    with tab2:
         st.markdown("### 📂 토픽별 리뷰 분류")
         
         topic_data = analyze_topics(contents_tuple)
@@ -779,9 +778,9 @@ def display_analysis(df, app_name="", data_info=""):
                     st.info("해당 토픽 리뷰 없음")
     
     # ----------------------------
-    # 탭 4: 키워드 분석 (통합)
+    # 탭 3: 키워드 분석 (통합)
     # ----------------------------
-    with tab4:
+    with tab3:
         # 키워드 심층 분석
         st.markdown("### 🔍 키워드 심층 분석")
         st.caption("특정 키워드 입력 시 해당 리뷰만 추출하여 분석")
@@ -891,9 +890,9 @@ def display_analysis(df, app_name="", data_info=""):
             st.caption("💡 추천: 광고, 결제, 버그, 로딩, 작품, 연재, 쿠키")
     
     # ----------------------------
-    # 탭 5: 요청/리뷰 (통합)
+    # 탭 4: 요청/리뷰 (통합)
     # ----------------------------
-    with tab5:
+    with tab4:
         # 요청사항 섹션
         st.markdown("### 🙏 사용자 요청사항")
         
