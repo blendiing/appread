@@ -62,7 +62,7 @@ def analyze_csv(input_path, output_path):
     df["pos_score"] = pos_scores
     df["neg_score"] = neg_scores
     
-    df.to_csv(output_path, index=False)
+    df.to_csv(output_path, index=False, quoting=1)  # quoting=1 = QUOTE_ALL
     print(f"완료! {output_path} 저장됨")
     print(f"감성 분포: {df['sentiment'].value_counts().to_dict()}")
 
