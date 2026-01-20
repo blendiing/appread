@@ -10,7 +10,7 @@ from pyvis.network import Network
 import streamlit.components.v1 as components
 
 # ----------------------------
-# 페이지 설정
+# 페이지 설정   
 # ----------------------------
 st.set_page_config(
     page_title="경쟁사 앱 리뷰 분석",
