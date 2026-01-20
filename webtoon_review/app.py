@@ -6,6 +6,8 @@ from wordcloud import WordCloud
 import re
 import os
 from io import BytesIO
+from pyvis.network import Network
+import streamlit.components.v1 as components
 
 # ----------------------------
 # 페이지 설정
@@ -509,35 +511,35 @@ def extract_requests(contents_tuple):
     
     return Counter(requests).most_common(30)
 
-@st.cache_data(ttl=7200)
-def analyze_complaints_trigram(df):
+@st.cache_data(ttl=7200, show_spinner=False)
+def analyze_complaints_trigram(contents_tuple, scores_tuple):
     """불만 키워드 조합 분석 (1-2점 리뷰, 트리그램 - 3단어 조합)"""
-    negative_df = df[df["score"] <= 2]
+    negative_contents = [c for c, s in zip(contents_tuple, scores_tuple) if s <= 2]
     
-    if negative_df.empty:
-        return [], [], pd.DataFrame()
+    if not negative_contents:
+        return [], []
     
     bigrams = []
     trigrams = []
-    for text in negative_df["content"]:
+    for text in negative_contents:
         bigrams += extract_bigrams(text)
         trigrams += extract_trigrams(text)
     
-    return Counter(bigrams).most_common(30), Counter(trigrams).most_common(30), negative_df
+    return Counter(bigrams).most_common(30), Counter(trigrams).most_common(30)
 
-@st.cache_data(ttl=7200)
-def analyze_positive_bigram(df):
+@st.cache_data(ttl=7200, show_spinner=False)
+def analyze_positive_bigram(contents_tuple, scores_tuple):
     """긍정 키워드 조합 분석 (4-5점 리뷰, 바이그램)"""
-    positive_df = df[df["score"] >= 4]
+    positive_contents = [c for c, s in zip(contents_tuple, scores_tuple) if s >= 4]
     
-    if positive_df.empty:
-        return [], pd.DataFrame()
+    if not positive_contents:
+        return []
     
     bigrams = []
-    for text in positive_df["content"]:
+    for text in positive_contents:
         bigrams += extract_bigrams(text)
     
-    return Counter(bigrams).most_common(30), positive_df
+    return Counter(bigrams).most_common(30)
 
 @st.cache_data(ttl=7200)
 def generate_wordcloud_image(word_freq_tuple, font_path):
@@ -557,6 +559,50 @@ def generate_wordcloud_image(word_freq_tuple, font_path):
         return img_buffer.getvalue()
     except:
         return None
+
+def generate_keyword_network(center_keyword, related_keywords, sentiment_type="neutral"):
+    """연관어 네트워크 그래프 생성"""
+    # 색상 설정
+    if sentiment_type == "positive":
+        center_color = "#28a745"  # 녹색
+        edge_color = "#82d995"
+    elif sentiment_type == "negative":
+        center_color = "#dc3545"  # 빨간색
+        edge_color = "#f5a3aa"
+    else:
+        center_color = "#007bff"  # 파란색
+        edge_color = "#7abaff"
+    
+    net = Network(height="300px", width="100%", bgcolor="#ffffff", font_color="#333333")
+    net.barnes_hut(gravity=-3000, central_gravity=0.3, spring_length=100)
+    
+    # 중심 키워드 노드
+    net.add_node(center_keyword, 
+                 label=center_keyword, 
+                 color=center_color, 
+                 size=40, 
+                 font={"size": 18, "face": "arial", "bold": True},
+                 borderWidth=3)
+    
+    # 연관 키워드 노드 및 엣지
+    max_freq = related_keywords[0][1] if related_keywords else 1
+    for keyword, freq in related_keywords[:12]:  # 최대 12개
+        # 빈도에 따른 노드 크기 조정
+        size = 15 + (freq / max_freq) * 20
+        width = 1 + (freq / max_freq) * 4
+        
+        net.add_node(keyword, 
+                     label=f"{keyword}\n({freq})", 
+                     color=edge_color, 
+                     size=size,
+                     font={"size": 12, "face": "arial"})
+        net.add_edge(center_keyword, keyword, width=width, color=edge_color)
+    
+    # HTML 생성
+    html = net.generate_html()
+    # 스크롤 방지를 위한 스타일 추가
+    html = html.replace("<head>", """<head><style>body{overflow:hidden;margin:0;}</style>""")
+    return html
 
 @st.cache_data(ttl=7200)
 def extract_keywords_cached(contents_tuple):
@@ -629,6 +675,7 @@ def display_analysis(df, app_name="", data_info=""):
         df["at"] = pd.to_datetime(df["at"])
     
     contents_tuple = tuple(df["content"].tolist())
+    scores_tuple = tuple(df["score"].tolist())
     
     # 탭 구성 (5개) - 순서: 통계, 토픽, 키워드, 요청/리뷰, 감성/불만
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -706,24 +753,25 @@ def display_analysis(df, app_name="", data_info=""):
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("#### 😊 긍정 키워드 조합")
-            pos_bigrams, _ = analyze_positive_bigram(df)
+            pos_bigrams = analyze_positive_bigram(contents_tuple, scores_tuple)
             if pos_bigrams:
                 pos_df = pd.DataFrame(pos_bigrams[:10], columns=["키워드 조합", "빈도"])
                 st.dataframe(pos_df, use_container_width=True, hide_index=True)
         
         with col2:
             st.markdown("#### 😤 부정 키워드 조합")
-            neg_bigrams, neg_trigrams, _ = analyze_complaints_trigram(df)
+            neg_bigrams, neg_trigrams = analyze_complaints_trigram(contents_tuple, scores_tuple)
             if neg_bigrams:
-                neg_df = pd.DataFrame(neg_bigrams[:10], columns=["키워드 조합", "빈도"])
-                st.dataframe(neg_df, use_container_width=True, hide_index=True)
+                neg_df_display = pd.DataFrame(neg_bigrams[:10], columns=["키워드 조합", "빈도"])
+                st.dataframe(neg_df_display, use_container_width=True, hide_index=True)
         
         st.markdown("---")
         
         # 불만 분석 섹션
         st.markdown("### 😤 불만 집중 분석 (1~2점)")
         
-        neg_bigrams, neg_trigrams, neg_df = analyze_complaints_trigram(df)
+        neg_bigrams, neg_trigrams = analyze_complaints_trigram(contents_tuple, scores_tuple)
+        neg_df = df[df["score"] <= 2]
         
         st.markdown(f"🔴 불만 리뷰: **{len(neg_df):,}건** ({len(neg_df)/len(df)*100:.1f}%)")
         
@@ -865,10 +913,9 @@ def display_analysis(df, app_name="", data_info=""):
                         if pos_kw_counter:
                             st.dataframe(pd.DataFrame(pos_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
                             
-                            # 워드클라우드
-                            img_bytes = generate_wordcloud_image(tuple(pos_kw_counter), FONT_PATH)
-                            if img_bytes:
-                                st.image(img_bytes, use_container_width=True)
+                            # 연관어 네트워크 그래프
+                            network_html = generate_keyword_network(deep_keyword, pos_kw_counter, "positive")
+                            components.html(network_html, height=320)
                     else:
                         st.info("긍정 리뷰 없음")
                 
@@ -882,10 +929,9 @@ def display_analysis(df, app_name="", data_info=""):
                         if neg_kw_counter:
                             st.dataframe(pd.DataFrame(neg_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
                             
-                            # 워드클라우드
-                            img_bytes = generate_wordcloud_image(tuple(neg_kw_counter), FONT_PATH)
-                            if img_bytes:
-                                st.image(img_bytes, use_container_width=True)
+                            # 연관어 네트워크 그래프
+                            network_html = generate_keyword_network(deep_keyword, neg_kw_counter, "negative")
+                            components.html(network_html, height=320)
                     else:
                         st.info("부정 리뷰 없음")
         
@@ -917,8 +963,8 @@ def display_analysis(df, app_name="", data_info=""):
         # 리뷰 원문 섹션
         st.markdown("### 📝 리뷰 원문")
         
-        # 키워드 검색, 평점, 감성 같은 라인
-        col1, col2, col3 = st.columns(3)
+        # 키워드 검색, 평점, 감성 같은 라인 (균등 배치)
+        col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
             keyword = st.text_input("키워드 검색", key="review_search", max_chars=30, placeholder="검색어 입력")
