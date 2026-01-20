@@ -377,6 +377,7 @@ def get_reviews_cached(app_id, count=1000):
     continuation_token = None
     
     try:
+        progress_bar = st.progress(0, text="리뷰 수집 중...")
         while len(result) < count:
             batch_size = min(100, count - len(result))
             review_batch, continuation_token = reviews(
@@ -385,8 +386,11 @@ def get_reviews_cached(app_id, count=1000):
                 continuation_token=continuation_token
             )
             result.extend(review_batch)
+            progress = min(len(result) / count, 1.0)
+            progress_bar.progress(progress, text=f"리뷰 수집 중... {len(result)}/{count}건")
             if not continuation_token:
                 break
+        progress_bar.empty()
     except Exception as e:
         st.error(f"리뷰 수집 중 오류: {e}")
         return pd.DataFrame()
@@ -597,51 +601,55 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
     # 색상 설정
     if sentiment_type == "positive":
         center_color = "#28a745"  # 녹색
-        level1_color = "#82d995"
-        level2_color = "#c8e6c9"
+        level1_color = "#66bb6a"
+        level2_color = "#a5d6a7"
+        level3_color = "#c8e6c9"
     elif sentiment_type == "negative":
         center_color = "#dc3545"  # 빨간색
-        level1_color = "#f5a3aa"
-        level2_color = "#ffcdd2"
+        level1_color = "#ef5350"
+        level2_color = "#ef9a9a"
+        level3_color = "#ffcdd2"
     else:
         center_color = "#007bff"  # 파란색
-        level1_color = "#7abaff"
-        level2_color = "#bbdefb"
+        level1_color = "#42a5f5"
+        level2_color = "#90caf9"
+        level3_color = "#bbdefb"
     
-    net = Network(height="350px", width="100%", bgcolor="#ffffff", font_color="#333333")
-    net.barnes_hut(gravity=-4000, central_gravity=0.3, spring_length=120)
+    # 정사각형 (400x400)
+    net = Network(height="400px", width="400px", bgcolor="#ffffff", font_color="#333333")
+    net.barnes_hut(gravity=-5000, central_gravity=0.35, spring_length=100)
     
     # 중심 키워드 노드 (레벨 0)
     net.add_node(center_keyword, 
                  label=center_keyword, 
                  color=center_color, 
-                 size=45, 
-                 font={"size": 18, "face": "arial"},
+                 size=50, 
+                 font={"size": 16, "face": "arial", "color": "#ffffff"},
                  borderWidth=3,
                  level=0)
     
-    # 1차 연관 키워드 (레벨 1)
+    # 1차 연관 키워드 (레벨 1) - 최대 10개
     max_freq = related_keywords[0][1] if related_keywords else 1
     level1_keywords = []
     
-    for keyword, freq in related_keywords[:8]:  # 1차: 최대 8개
-        size = 20 + (freq / max_freq) * 15
-        width = 2 + (freq / max_freq) * 3
+    for keyword, freq in related_keywords[:10]:
+        size = 22 + (freq / max_freq) * 18
+        width = 2 + (freq / max_freq) * 4
         
         net.add_node(keyword, 
                      label=f"{keyword}\n({freq})", 
                      color=level1_color, 
                      size=size,
-                     font={"size": 11, "face": "arial"},
+                     font={"size": 10, "face": "arial"},
                      level=1)
         net.add_edge(center_keyword, keyword, width=width, color=level1_color)
         level1_keywords.append(keyword)
     
     # 2차 연관 키워드 계산 (레벨 2)
-    # 1차 키워드와 함께 등장하는 키워드 찾기
     added_level2 = set()
-    for l1_keyword in level1_keywords[:5]:  # 상위 5개 1차 키워드에 대해서만
-        # 해당 1차 키워드가 포함된 리뷰에서 다른 키워드 추출
+    level2_nodes = {}
+    
+    for l1_keyword in level1_keywords[:7]:  # 상위 7개 1차 키워드
         co_keywords = []
         for text in contents_list:
             if l1_keyword in text and center_keyword in text:
@@ -650,23 +658,48 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
                     if t != l1_keyword and t != center_keyword and t not in level1_keywords:
                         co_keywords.append(t)
         
-        # 빈도 계산 후 상위 2개
-        co_counter = Counter(co_keywords).most_common(2)
+        # 빈도 계산 후 상위 3개
+        co_counter = Counter(co_keywords).most_common(3)
         for l2_keyword, l2_freq in co_counter:
             if l2_keyword not in added_level2 and l2_freq >= 2:
-                node_id = f"{l1_keyword}_{l2_keyword}"  # 중복 방지
+                node_id = f"L2_{l1_keyword}_{l2_keyword}"
                 net.add_node(node_id, 
                              label=f"{l2_keyword}\n({l2_freq})", 
                              color=level2_color, 
-                             size=12,
-                             font={"size": 9, "face": "arial"},
+                             size=14,
+                             font={"size": 8, "face": "arial"},
                              level=2)
-                net.add_edge(l1_keyword, node_id, width=1, color=level2_color)
+                net.add_edge(l1_keyword, node_id, width=1.5, color=level2_color)
                 added_level2.add(l2_keyword)
+                level2_nodes[node_id] = l2_keyword
+    
+    # 3차 연관 키워드 (레벨 3) - 상위 2차 노드에서만
+    added_level3 = set()
+    for node_id, l2_keyword in list(level2_nodes.items())[:5]:
+        co_keywords = []
+        for text in contents_list:
+            if l2_keyword in text and center_keyword in text:
+                tokens = simple_tokenizer(text)
+                for t in tokens:
+                    if t != l2_keyword and t != center_keyword and t not in level1_keywords and t not in added_level2:
+                        co_keywords.append(t)
+        
+        co_counter = Counter(co_keywords).most_common(2)
+        for l3_keyword, l3_freq in co_counter:
+            if l3_keyword not in added_level3 and l3_freq >= 2:
+                l3_node_id = f"L3_{l2_keyword}_{l3_keyword}"
+                net.add_node(l3_node_id, 
+                             label=l3_keyword, 
+                             color=level3_color, 
+                             size=10,
+                             font={"size": 7, "face": "arial"},
+                             level=3)
+                net.add_edge(node_id, l3_node_id, width=1, color=level3_color)
+                added_level3.add(l3_keyword)
     
     # HTML 생성
     html = net.generate_html()
-    html = html.replace("<head>", """<head><style>body{overflow:hidden;margin:0;}</style>""")
+    html = html.replace("<head>", """<head><style>body{overflow:hidden;margin:0;padding:0;}#mynetwork{border:1px solid #e0e0e0;border-radius:8px;}</style>""")
     return html
 
 @st.cache_data(ttl=7200)
@@ -989,7 +1022,7 @@ def display_analysis(df, app_name="", data_info=""):
                             
                             # 연관어 네트워크 그래프 (2차 연결 포함)
                             network_html = generate_keyword_network(deep_keyword, pos_kw_counter, pos_contents, "positive")
-                            components.html(network_html, height=370)
+                            components.html(network_html, height=420, width=420)
                     else:
                         st.info("긍정 리뷰 없음")
                 
@@ -1006,7 +1039,7 @@ def display_analysis(df, app_name="", data_info=""):
                             
                             # 연관어 네트워크 그래프 (2차 연결 포함)
                             network_html = generate_keyword_network(deep_keyword, neg_kw_counter, neg_contents, "negative")
-                            components.html(network_html, height=370)
+                            components.html(network_html, height=420, width=420)
                     else:
                         st.info("부정 리뷰 없음")
         
