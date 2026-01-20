@@ -76,9 +76,6 @@ webtoon-review-analysis/
 |--------|-------|
 | 네이버 웹툰 | `com.nhn.android.webtoon` |
 | 카카오페이지 | `com.kakaopage.app` |
-| 레진코믹스 | `com.lezhin.comics` |
-| 탑툰 | `com.toptoon.app` |
-| 봄툰 | `com.bomtoon.app` |
 
 ## 📝 주의사항
 
