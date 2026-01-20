@@ -294,10 +294,41 @@ def extract_trigrams(text):
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_default_data():
+    """기본 데이터 로드 + 감성분석 완료 상태로 반환"""
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "default_reviews.csv")
         df = pd.read_csv(csv_path)
         df["at"] = pd.to_datetime(df["at"])
+        
+        # 미리 감성분석 수행 (웹툰 모드)
+        results = []
+        pos_scores = []
+        neg_scores = []
+        
+        for _, row in df.iterrows():
+            text = str(row["content"])
+            score = row["score"]
+            
+            pos_weight = sum(weight for word, weight in WEBTOON_SENTIMENT["positive"].items() if word in text)
+            neg_weight = sum(weight for word, weight in WEBTOON_SENTIMENT["negative"].items() if word in text)
+            
+            pos_scores.append(pos_weight)
+            neg_scores.append(neg_weight)
+            
+            if score >= 4:
+                sentiment = "부정" if neg_weight >= 6 and neg_weight > pos_weight else "긍정"
+            elif score <= 2:
+                sentiment = "긍정" if pos_weight >= 6 and pos_weight > neg_weight else "부정"
+            else:
+                diff = pos_weight - neg_weight
+                sentiment = "긍정" if diff >= 2 else ("부정" if diff <= -2 else "중립")
+            
+            results.append(sentiment)
+        
+        df["sentiment"] = results
+        df["pos_score"] = pos_scores
+        df["neg_score"] = neg_scores
+        
         return df
     except Exception as e:
         st.error(f"기본 데이터 로드 실패: {e}")
@@ -566,6 +597,9 @@ def display_analysis(df, app_name="", data_info=""):
 • 극단: 하차(3), 시간낭비(3), 발암(3)
 """
     
+    # 데이터 고유 키 생성 (캐싱용)
+    data_key = f"{app_name}_{len(df)}"
+    
     # 웹툰 특화 모드 토글
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -573,11 +607,24 @@ def display_analysis(df, app_name="", data_info=""):
     with col2:
         webtoon_mode = st.toggle("🎨 웹툰 특화 분석", value=True, help=webtoon_help)
     
-    # 감성 분석 적용 (모드에 따라)
-    if webtoon_mode:
-        df = analyze_sentiment_webtoon(df)
+    # 감성 분석: 이미 있으면 스킵, 없거나 모드 변경 시에만 분석
+    has_sentiment = "sentiment" in df.columns
+    cache_key = f"analyzed_{data_key}_{'webtoon' if webtoon_mode else 'basic'}"
+    
+    if has_sentiment and webtoon_mode:
+        # 기본 데이터는 이미 웹툰 모드로 분석됨 - 그대로 사용
+        pass
+    elif cache_key in st.session_state:
+        # 캐시에 있으면 사용
+        df = st.session_state[cache_key]
     else:
-        df = analyze_sentiment_basic(df)
+        # 새로 분석 필요
+        with st.spinner("🔄 감성 분석 중..."):
+            if webtoon_mode:
+                df = analyze_sentiment_webtoon(df)
+            else:
+                df = analyze_sentiment_basic(df)
+            st.session_state[cache_key] = df
     
     contents_tuple = tuple(df["content"].tolist())
     
@@ -935,15 +982,6 @@ with st.sidebar:
     if not app_id_input:
         st.caption("💡 앱 ID 입력 시 활성화")
 
-# 기본 데이터 초기화 (최초 1회만 - 감성분석까지 완료된 상태)
-if "default_df_analyzed" not in st.session_state:
-    with st.spinner("📥 기본 데이터 초기화 중..."):
-        raw_df = load_default_data()
-        # 미리 감성 분석 적용
-        analyzed_df = analyze_sentiment_webtoon(raw_df)
-        st.session_state["default_df_analyzed"] = analyzed_df
-        st.session_state["default_df_raw"] = raw_df
-
 # 메인 콘텐츠
 # 수집 버튼 클릭 시 데이터 수집
 if collect_btn and app_id_input:
@@ -957,9 +995,10 @@ if collect_btn and app_id_input:
 if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
     display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
 
-# 수집된 데이터가 없으면 기본 데이터 표시 (이미 분석 완료된 데이터)
+# 수집된 데이터가 없으면 기본 데이터 표시 (load_default_data가 이미 분석 완료)
 else:
-    display_analysis(st.session_state.get("default_df_raw", pd.DataFrame()), "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
+    default_df = load_default_data()  # @st.cache_data로 캐싱됨, 감성분석 포함
+    display_analysis(default_df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
