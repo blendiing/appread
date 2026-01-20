@@ -10,7 +10,7 @@ from pyvis.network import Network
 import streamlit.components.v1 as components
 
 # ----------------------------
-# 페이지 설정   
+# 페이지 설정
 # ----------------------------
 st.set_page_config(
     page_title="경쟁사 앱 리뷰 분석",
@@ -274,6 +274,38 @@ def simple_tokenizer(text):
     tokens = re.findall(r"[가-힣]{2,}", str(text))
     tokens = [t for t in tokens if t not in STOPWORDS and len(t) >= 2]
     return tokens
+
+def analyze_keyword_context_sentiment(text, keyword):
+    """키워드 주변 문맥 기반 감성 분석"""
+    # 키워드 주변 부정 패턴
+    negative_patterns = [
+        f"{keyword}.*?(빼|없애|제거|싫|별로|짜증|불편|안좋|최악|노잼|지루|답답|하차|그만)",
+        f"(빼|없애|제거|싫|별로|짜증|불편|안좋|최악|노잼|지루|답답|하차|그만).*?{keyword}",
+        f"{keyword}.*?(왜|뭐야|뭔|진짜|도대체).*?(있|나와|뜨|보여)",
+        f"(제발|부탁).*?{keyword}.*?(빼|없|제거|하지)",
+    ]
+    
+    # 키워드 주변 긍정 패턴
+    positive_patterns = [
+        f"{keyword}.*?(좋|최고|완벽|대박|굿|짱|사랑|감사|편리|유용|도움)",
+        f"(좋|최고|완벽|대박|굿|짱|사랑|감사|편리|유용|도움).*?{keyword}",
+        f"{keyword}.*?(있어서|덕분|편해|좋아)",
+    ]
+    
+    text_lower = text.lower()
+    
+    # 부정 패턴 체크
+    for pattern in negative_patterns:
+        if re.search(pattern, text_lower):
+            return "부정"
+    
+    # 긍정 패턴 체크
+    for pattern in positive_patterns:
+        if re.search(pattern, text_lower):
+            return "긍정"
+    
+    # 패턴 매칭 안되면 None (기존 감성 사용)
+    return None
 
 def extract_bigrams(text):
     """키워드 조합 (바이그램) 추출"""
@@ -560,47 +592,80 @@ def generate_wordcloud_image(word_freq_tuple, font_path):
     except:
         return None
 
-def generate_keyword_network(center_keyword, related_keywords, sentiment_type="neutral"):
-    """연관어 네트워크 그래프 생성"""
+def generate_keyword_network(center_keyword, related_keywords, contents_list, sentiment_type="neutral"):
+    """연관어 네트워크 그래프 생성 (2차 연결 포함)"""
     # 색상 설정
     if sentiment_type == "positive":
         center_color = "#28a745"  # 녹색
-        edge_color = "#82d995"
+        level1_color = "#82d995"
+        level2_color = "#c8e6c9"
     elif sentiment_type == "negative":
         center_color = "#dc3545"  # 빨간색
-        edge_color = "#f5a3aa"
+        level1_color = "#f5a3aa"
+        level2_color = "#ffcdd2"
     else:
         center_color = "#007bff"  # 파란색
-        edge_color = "#7abaff"
+        level1_color = "#7abaff"
+        level2_color = "#bbdefb"
     
-    net = Network(height="300px", width="100%", bgcolor="#ffffff", font_color="#333333")
-    net.barnes_hut(gravity=-3000, central_gravity=0.3, spring_length=100)
+    net = Network(height="350px", width="100%", bgcolor="#ffffff", font_color="#333333")
+    net.barnes_hut(gravity=-4000, central_gravity=0.3, spring_length=120)
     
-    # 중심 키워드 노드
+    # 중심 키워드 노드 (레벨 0)
     net.add_node(center_keyword, 
                  label=center_keyword, 
                  color=center_color, 
-                 size=40, 
-                 font={"size": 18, "face": "arial", "bold": True},
-                 borderWidth=3)
+                 size=45, 
+                 font={"size": 18, "face": "arial"},
+                 borderWidth=3,
+                 level=0)
     
-    # 연관 키워드 노드 및 엣지
+    # 1차 연관 키워드 (레벨 1)
     max_freq = related_keywords[0][1] if related_keywords else 1
-    for keyword, freq in related_keywords[:12]:  # 최대 12개
-        # 빈도에 따른 노드 크기 조정
-        size = 15 + (freq / max_freq) * 20
-        width = 1 + (freq / max_freq) * 4
+    level1_keywords = []
+    
+    for keyword, freq in related_keywords[:8]:  # 1차: 최대 8개
+        size = 20 + (freq / max_freq) * 15
+        width = 2 + (freq / max_freq) * 3
         
         net.add_node(keyword, 
                      label=f"{keyword}\n({freq})", 
-                     color=edge_color, 
+                     color=level1_color, 
                      size=size,
-                     font={"size": 12, "face": "arial"})
-        net.add_edge(center_keyword, keyword, width=width, color=edge_color)
+                     font={"size": 11, "face": "arial"},
+                     level=1)
+        net.add_edge(center_keyword, keyword, width=width, color=level1_color)
+        level1_keywords.append(keyword)
+    
+    # 2차 연관 키워드 계산 (레벨 2)
+    # 1차 키워드와 함께 등장하는 키워드 찾기
+    added_level2 = set()
+    for l1_keyword in level1_keywords[:5]:  # 상위 5개 1차 키워드에 대해서만
+        # 해당 1차 키워드가 포함된 리뷰에서 다른 키워드 추출
+        co_keywords = []
+        for text in contents_list:
+            if l1_keyword in text and center_keyword in text:
+                tokens = simple_tokenizer(text)
+                for t in tokens:
+                    if t != l1_keyword and t != center_keyword and t not in level1_keywords:
+                        co_keywords.append(t)
+        
+        # 빈도 계산 후 상위 2개
+        co_counter = Counter(co_keywords).most_common(2)
+        for l2_keyword, l2_freq in co_counter:
+            if l2_keyword not in added_level2 and l2_freq >= 2:
+                node_id = f"{l1_keyword}_{l2_keyword}"  # 중복 방지
+                net.add_node(node_id, 
+                             label=f"{l2_keyword}\n({l2_freq})", 
+                             color=level2_color, 
+                             size=12,
+                             font={"size": 9, "face": "arial"},
+                             level=2)
+                net.add_edge(l1_keyword, node_id, width=1, color=level2_color)
+                added_level2.add(l2_keyword)
     
     # HTML 생성
     html = net.generate_html()
-    # 스크롤 방지를 위한 스타일 추가
     html = html.replace("<head>", """<head><style>body{overflow:hidden;margin:0;}</style>""")
     return html
 
@@ -851,20 +916,28 @@ def display_analysis(df, app_name="", data_info=""):
             if keyword_df.empty:
                 st.warning(f"'{deep_keyword}' 포함 리뷰 없음")
             else:
+                # 키워드 문맥 기반 감성 재분류
+                keyword_sentiments = []
+                for _, row in keyword_df.iterrows():
+                    context_sentiment = analyze_keyword_context_sentiment(row["content"], deep_keyword)
+                    # 문맥 감성이 있으면 그걸 사용, 없으면 기존 감성 사용
+                    keyword_sentiments.append(context_sentiment if context_sentiment else row["sentiment"])
+                keyword_df["keyword_sentiment"] = keyword_sentiments
+                
                 st.success(f"**'{deep_keyword}'** 관련 **{len(keyword_df):,}건** ({len(keyword_df)/len(df)*100:.1f}%)")
                 
                 col1, col2, col3, col4 = st.columns(4)
-                pos_cnt = (keyword_df["sentiment"] == "긍정").sum()
-                neg_cnt = (keyword_df["sentiment"] == "부정").sum()
+                pos_cnt = (keyword_df["keyword_sentiment"] == "긍정").sum()
+                neg_cnt = (keyword_df["keyword_sentiment"] == "부정").sum()
                 
                 with col1:
                     st.metric("리뷰 수", f"{len(keyword_df):,}")
                 with col2:
                     st.metric("평균 평점", f"{keyword_df['score'].mean():.1f}⭐")
                 with col3:
-                    st.metric("긍정", f"{pos_cnt/len(keyword_df)*100:.0f}%")
+                    st.metric(f"'{deep_keyword}' 긍정", f"{pos_cnt/len(keyword_df)*100:.0f}%", help="키워드 문맥 기반")
                 with col4:
-                    st.metric("부정", f"{neg_cnt/len(keyword_df)*100:.0f}%")
+                    st.metric(f"'{deep_keyword}' 부정", f"{neg_cnt/len(keyword_df)*100:.0f}%", help="키워드 문맥 기반")
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -885,15 +958,15 @@ def display_analysis(df, app_name="", data_info=""):
                     if bigram_cnt:
                         st.dataframe(pd.DataFrame(bigram_cnt, columns=["조합", "빈도"]), use_container_width=True, hide_index=True)
                 
-                # 긍정/부정 리뷰 비교
+                # 긍정/부정 리뷰 비교 (키워드 문맥 기반)
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown(f"#### 😊 긍정 ({pos_cnt}건)")
-                    for _, row in keyword_df[keyword_df["sentiment"] == "긍정"].head(5).iterrows():
+                    st.markdown(f"#### 😊 '{deep_keyword}' 긍정 ({pos_cnt}건)")
+                    for _, row in keyword_df[keyword_df["keyword_sentiment"] == "긍정"].head(5).iterrows():
                         st.caption(f"⭐{row['score']} | {row['content'][:80]}...")
                 with col2:
-                    st.markdown(f"#### 😤 부정 ({neg_cnt}건)")
-                    for _, row in keyword_df[keyword_df["sentiment"] == "부정"].head(5).iterrows():
+                    st.markdown(f"#### 😤 '{deep_keyword}' 부정 ({neg_cnt}건)")
+                    for _, row in keyword_df[keyword_df["keyword_sentiment"] == "부정"].head(5).iterrows():
                         st.caption(f"⭐{row['score']} | {row['content'][:80]}...")
                 
                 st.markdown("---")
@@ -905,33 +978,35 @@ def display_analysis(df, app_name="", data_info=""):
                 
                 with col1:
                     st.markdown("#### 😊 긍정 리뷰 최다 키워드")
-                    pos_keyword_df = keyword_df[keyword_df["sentiment"] == "긍정"]
+                    pos_keyword_df = keyword_df[keyword_df["keyword_sentiment"] == "긍정"]
                     if not pos_keyword_df.empty:
-                        pos_tokens = extract_keywords_cached(tuple(pos_keyword_df["content"].tolist()))
+                        pos_contents = pos_keyword_df["content"].tolist()
+                        pos_tokens = extract_keywords_cached(tuple(pos_contents))
                         pos_tokens = [t for t in pos_tokens if deep_keyword not in t and t not in deep_keyword]
                         pos_kw_counter = Counter(pos_tokens).most_common(15)
                         if pos_kw_counter:
                             st.dataframe(pd.DataFrame(pos_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
                             
-                            # 연관어 네트워크 그래프
-                            network_html = generate_keyword_network(deep_keyword, pos_kw_counter, "positive")
-                            components.html(network_html, height=320)
+                            # 연관어 네트워크 그래프 (2차 연결 포함)
+                            network_html = generate_keyword_network(deep_keyword, pos_kw_counter, pos_contents, "positive")
+                            components.html(network_html, height=370)
                     else:
                         st.info("긍정 리뷰 없음")
                 
                 with col2:
                     st.markdown("#### 😤 부정 리뷰 최다 키워드")
-                    neg_keyword_df = keyword_df[keyword_df["sentiment"] == "부정"]
+                    neg_keyword_df = keyword_df[keyword_df["keyword_sentiment"] == "부정"]
                     if not neg_keyword_df.empty:
-                        neg_tokens = extract_keywords_cached(tuple(neg_keyword_df["content"].tolist()))
+                        neg_contents = neg_keyword_df["content"].tolist()
+                        neg_tokens = extract_keywords_cached(tuple(neg_contents))
                         neg_tokens = [t for t in neg_tokens if deep_keyword not in t and t not in deep_keyword]
                         neg_kw_counter = Counter(neg_tokens).most_common(15)
                         if neg_kw_counter:
                             st.dataframe(pd.DataFrame(neg_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
                             
-                            # 연관어 네트워크 그래프
-                            network_html = generate_keyword_network(deep_keyword, neg_kw_counter, "negative")
-                            components.html(network_html, height=320)
+                            # 연관어 네트워크 그래프 (2차 연결 포함)
+                            network_html = generate_keyword_network(deep_keyword, neg_kw_counter, neg_contents, "negative")
+                            components.html(network_html, height=370)
                     else:
                         st.info("부정 리뷰 없음")
         
