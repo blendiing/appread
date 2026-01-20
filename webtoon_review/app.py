@@ -943,13 +943,14 @@ def display_analysis(df, app_name="", data_info=""):
 # ----------------------------
 # 메인 UI
 # ----------------------------
-st.title("📊 앱 리뷰 분석")
+st.markdown("#### 📊 앱 리뷰 분석 &nbsp;&nbsp;|&nbsp;&nbsp; [GitHub](https://github.com/blendiing/appread)")
 
 # 사이드바
 with st.sidebar:
     st.markdown("#### 🔍 앱 ID")
     app_id_input = st.text_input(
         "앱 ID",
+        value="",
         placeholder="com.example.app",
         label_visibility="collapsed"
     )
@@ -962,8 +963,6 @@ with st.sidebar:
         st.caption("카카오페이지")
         st.code("com.initialcoms.ridi")
         st.caption("리디북스")
-        st.code("com.lezhin.comics")
-        st.caption("레진코믹스")
     
     st.markdown("---")
     
@@ -975,19 +974,20 @@ with st.sidebar:
     )
     
     # 데이터 수집 버튼
+    has_input = app_id_input is not None and len(app_id_input.strip()) > 0
     collect_btn = st.button(
         "🚀 수집 시작", 
         type="primary", 
         use_container_width=True,
-        disabled=(not app_id_input)
+        disabled=(not has_input)
     )
     
-    if not app_id_input:
+    if not has_input:
         st.caption("💡 앱 ID 입력 시 활성화")
 
 # 메인 콘텐츠
 # 수집 버튼 클릭 시 데이터 수집
-if collect_btn and app_id_input:
+if collect_btn and has_input:
     with st.spinner(f"📥 {app_id_input} 리뷰 수집 중... ({review_count}건)"):
         df = get_reviews_cached(app_id_input, count=review_count)
         df = df.sort_values(by="at", ascending=False)
