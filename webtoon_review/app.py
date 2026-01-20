@@ -330,10 +330,12 @@ def get_reviews_cached(app_id, count=1000):
     return df
 
 # ----------------------------
-# 분석 함수들
+# 분석 함수들 (캐싱 적용)
 # ----------------------------
-def analyze_sentiment_basic(df):
-    """기본 감성 분석"""
+@st.cache_data(ttl=7200, show_spinner=False)
+def analyze_sentiment_basic_cached(df_json):
+    """기본 감성 분석 (캐싱용)"""
+    df = pd.read_json(df_json)
     results = []
     
     for _, row in df.iterrows():
@@ -357,14 +359,15 @@ def analyze_sentiment_basic(df):
         
         results.append(sentiment)
     
-    df = df.copy()
     df["sentiment"] = results
     df["pos_score"] = 0
     df["neg_score"] = 0
-    return df
+    return df.to_json()
 
-def analyze_sentiment_webtoon(df):
-    """웹툰/만화 특화 감성 분석 (가중치 적용)"""
+@st.cache_data(ttl=7200, show_spinner=False)
+def analyze_sentiment_webtoon_cached(df_json):
+    """웹툰/만화 특화 감성 분석 (캐싱용)"""
+    df = pd.read_json(df_json)
     results = []
     pos_scores = []
     neg_scores = []
@@ -382,16 +385,16 @@ def analyze_sentiment_webtoon(df):
         
         # 평점 기반 기본 판단 + 가중치 보정
         if score >= 4:
-            if neg_weight >= 6:  # 강한 부정 키워드가 있으면 재검토
+            if neg_weight >= 6:
                 sentiment = "부정" if neg_weight > pos_weight else "긍정"
             else:
                 sentiment = "긍정"
         elif score <= 2:
-            if pos_weight >= 6:  # 강한 긍정 키워드가 있으면 재검토
+            if pos_weight >= 6:
                 sentiment = "긍정" if pos_weight > neg_weight else "부정"
             else:
                 sentiment = "부정"
-        else:  # 3점
+        else:
             diff = pos_weight - neg_weight
             if diff >= 2:
                 sentiment = "긍정"
@@ -402,11 +405,20 @@ def analyze_sentiment_webtoon(df):
         
         results.append(sentiment)
     
-    df = df.copy()
     df["sentiment"] = results
     df["pos_score"] = pos_scores
     df["neg_score"] = neg_scores
-    return df
+    return df.to_json()
+
+def analyze_sentiment_basic(df):
+    """기본 감성 분석 (래퍼)"""
+    result_json = analyze_sentiment_basic_cached(df.to_json())
+    return pd.read_json(result_json)
+
+def analyze_sentiment_webtoon(df):
+    """웹툰/만화 특화 감성 분석 (래퍼)"""
+    result_json = analyze_sentiment_webtoon_cached(df.to_json())
+    return pd.read_json(result_json)
 
 def get_matched_keywords(text, is_webtoon_mode=False):
     """텍스트에서 매칭된 감성 키워드 추출"""
@@ -417,10 +429,6 @@ def get_matched_keywords(text, is_webtoon_mode=False):
         pos_matched = [(w, 1) for w in POSITIVE_WORDS if w in text]
         neg_matched = [(w, 1) for w in NEGATIVE_WORDS if w in text]
     return pos_matched, neg_matched
-    
-    df = df.copy()
-    df["sentiment"] = results
-    return df
 
 @st.cache_data(ttl=7200)
 def analyze_topics(contents_tuple):
@@ -927,9 +935,14 @@ with st.sidebar:
     if not app_id_input:
         st.caption("💡 앱 ID 입력 시 활성화")
 
-# 기본 데이터 초기화 (최초 1회만)
-if "default_df" not in st.session_state:
-    st.session_state["default_df"] = load_default_data()
+# 기본 데이터 초기화 (최초 1회만 - 감성분석까지 완료된 상태)
+if "default_df_analyzed" not in st.session_state:
+    with st.spinner("📥 기본 데이터 초기화 중..."):
+        raw_df = load_default_data()
+        # 미리 감성 분석 적용
+        analyzed_df = analyze_sentiment_webtoon(raw_df)
+        st.session_state["default_df_analyzed"] = analyzed_df
+        st.session_state["default_df_raw"] = raw_df
 
 # 메인 콘텐츠
 # 수집 버튼 클릭 시 데이터 수집
@@ -944,9 +957,9 @@ if collect_btn and app_id_input:
 if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
     display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
 
-# 수집된 데이터가 없으면 기본 데이터 표시 (캐싱된 데이터 사용)
+# 수집된 데이터가 없으면 기본 데이터 표시 (이미 분석 완료된 데이터)
 else:
-    display_analysis(st.session_state["default_df"], "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
+    display_analysis(st.session_state.get("default_df_raw", pd.DataFrame()), "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
