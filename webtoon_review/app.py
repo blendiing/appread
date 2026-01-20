@@ -81,9 +81,22 @@ h4 {
     padding: 8px 16px;
 }
 
-/* 입력 필드 */
+/* 입력 필드 기본 스타일 */
 .stTextInput input {
     font-size: 13px;
+}
+
+/* 키워드 입력 필드 - 녹색 테두리 */
+.keyword-input input {
+    border: 2px solid #28a745 !important;
+    border-radius: 5px !important;
+    max-width: 300px !important;
+}
+
+/* 키워드 입력 필드 - 포커스시 노란색 */
+.keyword-input input:focus {
+    border-color: #ffc107 !important;
+    box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3) !important;
 }
 
 /* 모바일 대응 (아이폰 15: 393px) */
@@ -522,12 +535,25 @@ def display_analysis(df, app_name="", data_info=""):
     if data_info:
         st.info(data_info)
     
+    # 웹툰 특화 키워드 help 텍스트 (표 형태)
+    webtoon_help = """
+【긍정 키워드 (가중치)】
+• 기본: 좋다(1), 재밌다(2), 강추(3), 최고(3)
+• 웹툰특화: 작화좋다(2), 스토리탄탄(3), 정주행(2), 시간순삭(3)
+• 극단: 갓작(3), 명작(3), 인생웹툰(3)
+
+【부정 키워드 (가중치)】
+• 기본: 별로(1), 노잼(3), 지루(2), 최악(3)
+• 웹툰특화: 작화붕괴(3), 캐붕(3), 급전개(2), 떡밥방치(3)
+• 극단: 하차(3), 시간낭비(3), 발암(3)
+"""
+    
     # 웹툰 특화 모드 토글
     col1, col2 = st.columns([3, 1])
     with col1:
         st.success(f"✅ **{len(df):,}건** 리뷰 분석 완료! {f'({app_name})' if app_name else ''}")
     with col2:
-        webtoon_mode = st.toggle("🎨 웹툰 특화 분석", value=True, help="웹툰/만화 특화 감성 키워드 적용")
+        webtoon_mode = st.toggle("🎨 웹툰 특화 분석", value=True, help=webtoon_help)
     
     # 감성 분석 적용 (모드에 따라)
     if webtoon_mode:
@@ -578,19 +604,6 @@ def display_analysis(df, app_name="", data_info=""):
     with tab2:
         # 감성 분석 섹션
         st.markdown("### 😊 감성 분석")
-        
-        # 웹툰 특화 모드 안내
-        if webtoon_mode:
-            with st.expander("🎨 웹툰 특화 감성 키워드 보기", expanded=False):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**😊 긍정 키워드**")
-                    pos_kw = list(WEBTOON_SENTIMENT["positive"].keys())
-                    st.caption(", ".join(pos_kw[:15]) + "...")
-                with col2:
-                    st.markdown("**😤 부정 키워드**")
-                    neg_kw = list(WEBTOON_SENTIMENT["negative"].keys())
-                    st.caption(", ".join(neg_kw[:15]) + "...")
         
         col1, col2 = st.columns(2)
         
@@ -704,23 +717,15 @@ def display_analysis(df, app_name="", data_info=""):
     # 탭 4: 키워드 분석 (통합)
     # ----------------------------
     with tab4:
-        # 키워드 심층 분석 (상단)
+        # 키워드 심층 분석
         st.markdown("### 🔍 키워드 심층 분석")
         st.caption("특정 키워드 입력 시 해당 리뷰만 추출하여 분석")
         
-        # 웹툰 특화 키워드 보기
-        with st.expander("🎨 웹툰 특화 감성 키워드 보기", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**😊 긍정 키워드**")
-                pos_kw = list(WEBTOON_SENTIMENT["positive"].keys())
-                st.caption(", ".join(pos_kw[:20]))
-            with col2:
-                st.markdown("**😤 부정 키워드**")
-                neg_kw = list(WEBTOON_SENTIMENT["negative"].keys())
-                st.caption(", ".join(neg_kw[:20]))
-        
-        deep_keyword = st.text_input("분석할 키워드", value="컷츠", placeholder="예: 광고, 결제, 버그", key="deep_kw")
+        # 분석할 키워드 입력 (볼드, 1.5배, 녹색 테두리)
+        st.markdown('<p style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">분석할 키워드</p>', unsafe_allow_html=True)
+        st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
+        deep_keyword = st.text_input("분석할 키워드", value="컷츠", placeholder="예: 광고, 결제", key="deep_kw", max_chars=30, label_visibility="collapsed")
+        st.markdown('</div>', unsafe_allow_html=True)
         
         if deep_keyword:
             keyword_df = df[df["content"].str.contains(deep_keyword, na=False, case=False)].copy()
@@ -816,25 +821,6 @@ def display_analysis(df, app_name="", data_info=""):
         
         else:
             st.caption("💡 추천: 광고, 결제, 버그, 로딩, 작품, 연재, 쿠키")
-        
-        st.markdown("---")
-        
-        # 전체 키워드 분석 (하위)
-        with st.expander("📈 전체 키워드 분석", expanded=False):
-            tokens = extract_keywords_cached(contents_tuple)
-            counter = Counter(tokens)
-            common_words = counter.most_common(30)
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                if common_words:
-                    img_bytes = generate_wordcloud_image(tuple(common_words), FONT_PATH)
-                    if img_bytes:
-                        st.image(img_bytes, use_container_width=True)
-            with col2:
-                st.markdown("#### TOP 15")
-                if common_words:
-                    st.dataframe(pd.DataFrame(common_words[:15], columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
     
     # ----------------------------
     # 탭 5: 요청/리뷰 (통합)
@@ -861,13 +847,17 @@ def display_analysis(df, app_name="", data_info=""):
         # 리뷰 원문 섹션
         st.markdown("### 📝 리뷰 원문")
         
-        col1, col2, col3 = st.columns(3)
+        # 키워드 검색 (맨 앞, 볼드, 녹색 테두리)
+        st.markdown('<p style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">키워드 검색</p>', unsafe_allow_html=True)
+        st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
+        keyword = st.text_input("키워드 검색", key="review_search", max_chars=30, label_visibility="collapsed", placeholder="검색어 입력")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
         with col1:
             score_filter = st.multiselect("평점", [1,2,3,4,5], default=[1,2,3,4,5], key="review_score")
         with col2:
             sentiment_filter = st.multiselect("감성", ["긍정", "중립", "부정"], default=["긍정", "중립", "부정"], key="review_sent")
-        with col3:
-            keyword = st.text_input("검색", key="review_search")
         
         filtered = df[df["score"].isin(score_filter) & df["sentiment"].isin(sentiment_filter)]
         if keyword:
