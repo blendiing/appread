@@ -1075,14 +1075,11 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
-    # 샘플 앱 ID - 컴팩트하게
+    # 샘플 앱 ID - 타이틀과 URL 한 줄로
     with st.expander("📋 샘플 앱 ID", expanded=False):
-        st.code("com.nhn.android.webtoon")
-        st.caption("네이버 웹툰")
-        st.code("com.kakaopage.app")
-        st.caption("카카오페이지")
-        st.code("com.initialcoms.ridi")
-        st.caption("리디북스")
+        st.markdown("**네이버 웹툰** &nbsp;`com.nhn.android.webtoon`")
+        st.markdown("**카카오페이지** &nbsp;`com.kakaopage.app`")
+        st.markdown("**리디북스** &nbsp;`com.initialcoms.ridi`")
     
     st.markdown("---")
     
