@@ -1,5 +1,5 @@
--e streamlit
-google-play-scraper
-pandas
-wordcloud
-pyvis
+streamlit>=1.24.0
+google-play-scraper>=1.2.4
+pandas>=1.5.0
+wordcloud>=1.9.0
+pyvis>=0.3.2
