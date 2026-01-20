@@ -64,6 +64,16 @@ h4 {
     font-size: 0.85rem !important;
 }
 
+/* 탭 고정 (스크롤 시 상단에 고정) */
+.stTabs [data-baseweb="tab-list"] {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 999;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+}
+
 /* 탭 크기 조정 */
 .stTabs [data-baseweb="tab-list"] button {
     font-size: 13px;
@@ -86,15 +96,15 @@ h4 {
     font-size: 13px;
 }
 
-/* 키워드 입력 필드 - 녹색 테두리 */
+/* 키워드 입력 필드 - 기본 녹색 테두리 */
 .keyword-input input {
     border: 2px solid #28a745 !important;
     border-radius: 5px !important;
-    max-width: 300px !important;
 }
 
-/* 키워드 입력 필드 - 포커스시 노란색 */
-.keyword-input input:focus {
+/* 키워드 입력 필드 - 포커스 및 입력 시 노란색 */
+.keyword-input input:focus,
+.keyword-input input:not(:placeholder-shown) {
     border-color: #ffc107 !important;
     box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3) !important;
 }
@@ -721,11 +731,14 @@ def display_analysis(df, app_name="", data_info=""):
         st.markdown("### 🔍 키워드 심층 분석")
         st.caption("특정 키워드 입력 시 해당 리뷰만 추출하여 분석")
         
-        # 분석할 키워드 입력 (볼드, 1.5배, 녹색 테두리)
-        st.markdown('<p style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">분석할 키워드</p>', unsafe_allow_html=True)
-        st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
-        deep_keyword = st.text_input("분석할 키워드", value="컷츠", placeholder="예: 광고, 결제", key="deep_kw", max_chars=30, label_visibility="collapsed")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 분석할 키워드 입력 (타이틀 + 인풋 가로 배치)
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            st.markdown('<p style="margin-top: 8px;">분석할 키워드</p>', unsafe_allow_html=True)
+        with col2:
+            st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
+            deep_keyword = st.text_input("분석할 키워드", value="컷츠", placeholder="예: 광고, 결제", key="deep_kw", max_chars=30, label_visibility="collapsed")
+            st.markdown('</div>', unsafe_allow_html=True)
         
         if deep_keyword:
             keyword_df = df[df["content"].str.contains(deep_keyword, na=False, case=False)].copy()
@@ -847,16 +860,15 @@ def display_analysis(df, app_name="", data_info=""):
         # 리뷰 원문 섹션
         st.markdown("### 📝 리뷰 원문")
         
-        # 키워드 검색 (맨 앞, 볼드, 녹색 테두리)
-        st.markdown('<p style="font-size: 1.2em; font-weight: bold; margin-bottom: 5px;">키워드 검색</p>', unsafe_allow_html=True)
-        st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
-        keyword = st.text_input("키워드 검색", key="review_search", max_chars=30, label_visibility="collapsed", placeholder="검색어 입력")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
+        # 키워드 검색, 평점, 감성 같은 라인
+        col1, col2, col3 = st.columns(3)
         with col1:
-            score_filter = st.multiselect("평점", [1,2,3,4,5], default=[1,2,3,4,5], key="review_score")
+            st.markdown('<div class="keyword-input">', unsafe_allow_html=True)
+            keyword = st.text_input("키워드 검색", key="review_search", max_chars=30, placeholder="검색어 입력")
+            st.markdown('</div>', unsafe_allow_html=True)
         with col2:
+            score_filter = st.multiselect("평점", [1,2,3,4,5], default=[1,2,3,4,5], key="review_score")
+        with col3:
             sentiment_filter = st.multiselect("감성", ["긍정", "중립", "부정"], default=["긍정", "중립", "부정"], key="review_sent")
         
         filtered = df[df["score"].isin(score_filter) & df["sentiment"].isin(sentiment_filter)]
@@ -873,8 +885,7 @@ def display_analysis(df, app_name="", data_info=""):
 # ----------------------------
 # 메인 UI
 # ----------------------------
-st.title("📊 앱 리뷰 분석 (한국어)")
-st.caption("🌐 English version available in sidebar menu")
+st.title("📊 앱 리뷰 분석")
 
 # 사이드바
 with st.sidebar:
@@ -916,6 +927,10 @@ with st.sidebar:
     if not app_id_input:
         st.caption("💡 앱 ID 입력 시 활성화")
 
+# 기본 데이터 초기화 (최초 1회만)
+if "default_df" not in st.session_state:
+    st.session_state["default_df"] = load_default_data()
+
 # 메인 콘텐츠
 # 수집 버튼 클릭 시 데이터 수집
 if collect_btn and app_id_input:
@@ -929,11 +944,9 @@ if collect_btn and app_id_input:
 if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
     display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
 
-# 수집된 데이터가 없으면 기본 데이터 표시
+# 수집된 데이터가 없으면 기본 데이터 표시 (캐싱된 데이터 사용)
 else:
-    with st.spinner("📥 기본 데이터 로딩 중..."):
-        df = load_default_data()
-    display_analysis(df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
+    display_analysis(st.session_state["default_df"], "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
