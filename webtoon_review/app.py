@@ -117,11 +117,17 @@ h4 {
     }
 }
 
-/* 간격 최적화 */
+/* 간격 최적화 - Streamlit Cloud 헤더 고려 */
 .block-container {
-    padding-top: 1rem;
+    padding-top: 2.5rem;
     padding-bottom: 1rem;
 }
+
+/* 메인 컨텐츠 영역 상단 여백 */
+.main .block-container {
+    padding-top: 3rem;
+}
+
 .stMarkdown {
     line-height: 1.5;
 }
@@ -698,31 +704,23 @@ def display_analysis(df, app_name="", data_info=""):
     # 탭 4: 키워드 분석 (통합)
     # ----------------------------
     with tab4:
-        st.markdown("### 🔎 키워드 분석")
-        
-        # 전체 키워드 워드클라우드
-        tokens = extract_keywords_cached(contents_tuple)
-        counter = Counter(tokens)
-        common_words = counter.most_common(30)
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            if common_words:
-                img_bytes = generate_wordcloud_image(tuple(common_words), FONT_PATH)
-                if img_bytes:
-                    st.image(img_bytes, use_container_width=True)
-        with col2:
-            st.markdown("#### TOP 15")
-            if common_words:
-                st.dataframe(pd.DataFrame(common_words[:15], columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
-        
-        st.markdown("---")
-        
-        # 키워드 심층 분석
+        # 키워드 심층 분석 (상단)
         st.markdown("### 🔍 키워드 심층 분석")
         st.caption("특정 키워드 입력 시 해당 리뷰만 추출하여 분석")
         
-        deep_keyword = st.text_input("분석할 키워드", placeholder="예: 광고, 결제, 버그", key="deep_kw")
+        # 웹툰 특화 키워드 보기
+        with st.expander("🎨 웹툰 특화 감성 키워드 보기", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**😊 긍정 키워드**")
+                pos_kw = list(WEBTOON_SENTIMENT["positive"].keys())
+                st.caption(", ".join(pos_kw[:20]))
+            with col2:
+                st.markdown("**😤 부정 키워드**")
+                neg_kw = list(WEBTOON_SENTIMENT["negative"].keys())
+                st.caption(", ".join(neg_kw[:20]))
+        
+        deep_keyword = st.text_input("분석할 키워드", value="컷츠", placeholder="예: 광고, 결제, 버그", key="deep_kw")
         
         if deep_keyword:
             keyword_df = df[df["content"].str.contains(deep_keyword, na=False, case=False)].copy()
@@ -774,8 +772,69 @@ def display_analysis(df, app_name="", data_info=""):
                     st.markdown(f"#### 😤 부정 ({neg_cnt}건)")
                     for _, row in keyword_df[keyword_df["sentiment"] == "부정"].head(5).iterrows():
                         st.caption(f"⭐{row['score']} | {row['content'][:80]}...")
+                
+                st.markdown("---")
+                
+                # 하위: 긍부정별 최다 빈도 키워드 분석
+                st.markdown(f"### 📊 '{deep_keyword}' 연관 긍부정 키워드 분석")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### 😊 긍정 리뷰 최다 키워드")
+                    pos_keyword_df = keyword_df[keyword_df["sentiment"] == "긍정"]
+                    if not pos_keyword_df.empty:
+                        pos_tokens = extract_keywords_cached(tuple(pos_keyword_df["content"].tolist()))
+                        pos_tokens = [t for t in pos_tokens if deep_keyword not in t and t not in deep_keyword]
+                        pos_kw_counter = Counter(pos_tokens).most_common(15)
+                        if pos_kw_counter:
+                            st.dataframe(pd.DataFrame(pos_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
+                            
+                            # 워드클라우드
+                            img_bytes = generate_wordcloud_image(tuple(pos_kw_counter), FONT_PATH)
+                            if img_bytes:
+                                st.image(img_bytes, use_container_width=True)
+                    else:
+                        st.info("긍정 리뷰 없음")
+                
+                with col2:
+                    st.markdown("#### 😤 부정 리뷰 최다 키워드")
+                    neg_keyword_df = keyword_df[keyword_df["sentiment"] == "부정"]
+                    if not neg_keyword_df.empty:
+                        neg_tokens = extract_keywords_cached(tuple(neg_keyword_df["content"].tolist()))
+                        neg_tokens = [t for t in neg_tokens if deep_keyword not in t and t not in deep_keyword]
+                        neg_kw_counter = Counter(neg_tokens).most_common(15)
+                        if neg_kw_counter:
+                            st.dataframe(pd.DataFrame(neg_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
+                            
+                            # 워드클라우드
+                            img_bytes = generate_wordcloud_image(tuple(neg_kw_counter), FONT_PATH)
+                            if img_bytes:
+                                st.image(img_bytes, use_container_width=True)
+                    else:
+                        st.info("부정 리뷰 없음")
+        
         else:
-            st.caption("💡 추천: 광고, 결제, 버그, 로딩, 작품, 연재")
+            st.caption("💡 추천: 광고, 결제, 버그, 로딩, 작품, 연재, 쿠키")
+        
+        st.markdown("---")
+        
+        # 전체 키워드 분석 (하위)
+        with st.expander("📈 전체 키워드 분석", expanded=False):
+            tokens = extract_keywords_cached(contents_tuple)
+            counter = Counter(tokens)
+            common_words = counter.most_common(30)
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                if common_words:
+                    img_bytes = generate_wordcloud_image(tuple(common_words), FONT_PATH)
+                    if img_bytes:
+                        st.image(img_bytes, use_container_width=True)
+            with col2:
+                st.markdown("#### TOP 15")
+                if common_words:
+                    st.dataframe(pd.DataFrame(common_words[:15], columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
     
     # ----------------------------
     # 탭 5: 요청/리뷰 (통합)
@@ -824,7 +883,8 @@ def display_analysis(df, app_name="", data_info=""):
 # ----------------------------
 # 메인 UI
 # ----------------------------
-st.title("📊 경쟁사 앱 리뷰 분석")
+st.title("📊 앱 리뷰 분석 (한국어)")
+st.caption("🌐 English version available in sidebar menu")
 
 # 사이드바
 with st.sidebar:
