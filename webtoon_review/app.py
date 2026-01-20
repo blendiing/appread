@@ -292,15 +292,19 @@ def extract_trigrams(text):
         trigrams.append(trigram)
     return trigrams
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner="기본 데이터 로딩...")
 def load_default_data():
-    """기본 데이터 로드 + 감성분석 완료 상태로 반환"""
+    """기본 데이터 로드 (CSV에 sentiment 포함 시 즉시 반환)"""
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "default_reviews.csv")
         df = pd.read_csv(csv_path)
         df["at"] = pd.to_datetime(df["at"])
         
-        # 미리 감성분석 수행 (웹툰 모드)
+        # CSV에 이미 sentiment가 있으면 바로 반환
+        if "sentiment" in df.columns:
+            return df
+        
+        # 없으면 감성분석 수행 (최초 1회)
         results = []
         pos_scores = []
         neg_scores = []
