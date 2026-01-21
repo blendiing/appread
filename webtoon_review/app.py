@@ -886,7 +886,7 @@ def display_analysis(df, app_name="", data_info=""):
                 st.dataframe(pd.DataFrame(neg_trigrams[:15], columns=["조합", "빈도"]), use_container_width=True, hide_index=True)
         
         # 불만 리뷰 원문
-        with st.expander(f"📋 불만 리뷰 원문 ({len(neg_df):,}건)", expanded=False):
+        with st.expander(f"📋 불만 리뷰 원문 ({len(neg_df):,}건)", expanded=True):
             search_complaint = st.text_input("🔍 검색", key="complaint_search")
             filtered_neg = neg_df.copy()
             if search_complaint:
@@ -916,7 +916,7 @@ def display_analysis(df, app_name="", data_info=""):
         
         # 토픽별 펼침
         for topic, reviews_list in sorted_topics:
-            with st.expander(f"{topic} ({len(reviews_list):,}건)", expanded=False):
+            with st.expander(f"{topic} ({len(reviews_list):,}건)", expanded=True):
                 if reviews_list:
                     keywords = TOPIC_KEYWORDS[topic]
                     st.caption(f"🔑 키워드: {', '.join(keywords[:8])}")
@@ -1109,7 +1109,7 @@ with st.sidebar:
     )
     
     # 샘플 앱 ID - 타이틀과 URL 한 줄로
-    with st.expander("📋 샘플 앱 ID", expanded=False):
+    with st.expander("📋 샘플 앱 ID", expanded=True):
         st.markdown("**네이버 웹툰** &nbsp;`com.nhn.android.webtoon`")
         st.markdown("**카카오페이지** &nbsp;`com.kakaopage.app`")
         st.markdown("**리디북스** &nbsp;`com.initialcoms.ridi`")
