@@ -332,8 +332,8 @@ def load_default_data():
         df["at"] = pd.to_datetime(df["at"])
         
         # 메모리 최적화: 최대 500건만 사용
-        if len(df) > 500:
-            df = df.head(500)
+        if len(df) > 1000:
+            df = df.head(1000)
         
         # CSV에 이미 sentiment가 있으면 바로 반환
         if "sentiment" in df.columns:
