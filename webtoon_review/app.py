@@ -371,13 +371,13 @@ def load_default_data():
         st.error(f"기본 데이터 로드 실패: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=7200, show_spinner=False)
-def get_reviews_cached(app_id, count=1000):
+def get_reviews_with_progress(app_id, count=1000):
+    """리뷰 수집 (진행 상황 표시)"""
     result = []
     continuation_token = None
     
+    progress_bar = st.progress(0, text="리뷰 수집 중...")
     try:
-        progress_bar = st.progress(0, text="리뷰 수집 중...")
         while len(result) < count:
             batch_size = min(100, count - len(result))
             review_batch, continuation_token = reviews(
@@ -390,10 +390,12 @@ def get_reviews_cached(app_id, count=1000):
             progress_bar.progress(progress, text=f"리뷰 수집 중... {len(result)}/{count}건")
             if not continuation_token:
                 break
-        progress_bar.empty()
     except Exception as e:
+        progress_bar.empty()
         st.error(f"리뷰 수집 중 오류: {e}")
         return pd.DataFrame()
+    
+    progress_bar.empty()
     
     df = pd.DataFrame(result)
     if not df.empty:
@@ -624,7 +626,7 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
                  label=center_keyword, 
                  color=center_color, 
                  size=50, 
-                 font={"size": 16, "face": "arial", "color": "#ffffff"},
+                 font={"size": 48, "face": "arial", "color": "#ffffff"},
                  borderWidth=3,
                  level=0)
     
@@ -640,7 +642,7 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
                      label=f"{keyword}\n({freq})", 
                      color=level1_color, 
                      size=size,
-                     font={"size": 10, "face": "arial"},
+                     font={"size": 30, "face": "arial"},
                      level=1)
         net.add_edge(center_keyword, keyword, width=width, color=level1_color)
         level1_keywords.append(keyword)
@@ -667,7 +669,7 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
                              label=f"{l2_keyword}\n({l2_freq})", 
                              color=level2_color, 
                              size=14,
-                             font={"size": 8, "face": "arial"},
+                             font={"size": 24, "face": "arial"},
                              level=2)
                 net.add_edge(l1_keyword, node_id, width=1.5, color=level2_color)
                 added_level2.add(l2_keyword)
@@ -692,7 +694,7 @@ def generate_keyword_network(center_keyword, related_keywords, contents_list, se
                              label=l3_keyword, 
                              color=level3_color, 
                              size=10,
-                             font={"size": 7, "face": "arial"},
+                             font={"size": 21, "face": "arial"},
                              level=3)
                 net.add_edge(node_id, l3_node_id, width=1, color=level3_color)
                 added_level3.add(l3_keyword)
@@ -1138,8 +1140,8 @@ with st.sidebar:
 # 메인 콘텐츠
 # 수집 버튼 클릭 시 데이터 수집
 if collect_btn and has_input:
-    with st.spinner(f"📥 {app_id_input} 리뷰 수집 중... ({review_count}건)"):
-        df = get_reviews_cached(app_id_input, count=review_count)
+    df = get_reviews_with_progress(app_id_input, count=review_count)
+    if not df.empty:
         df = df.sort_values(by="at", ascending=False)
         st.session_state["collected_df"] = df
         st.session_state["collected_app"] = app_id_input
