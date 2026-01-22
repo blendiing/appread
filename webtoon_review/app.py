@@ -374,7 +374,8 @@ def load_default_data():
         st.error(f"기본 데이터 로드 실패: {e}")
         return pd.DataFrame()
 
-def get_reviews_with_progress(app_id, count=1000):
+# Modal API URL (배포 후 업데이트 필요)
+def get_reviews_with_progress(app_id, count=500):
     """리뷰 수집 (진행 상황 표시)"""
     result = []
     continuation_token = None
@@ -618,181 +619,6 @@ def calculate_co_occurrence(contents_tuple):
             if a != b:
                 co_occurrence.setdefault(a, []).append(b)
     return co_occurrence
-
-# ----------------------------
-# 기본 데이터 즉시 표시 (JSON 기반)
-# ----------------------------
-def display_default_analysis():
-    """기본 데이터 분석 결과 즉시 표시 (미리 계산된 JSON 사용)"""
-    try:
-        # CSV와 JSON 로드
-        csv_path = os.path.join(os.path.dirname(__file__), "default_reviews.csv")
-        json_path = os.path.join(os.path.dirname(__file__), "default_analysis.json")
-        
-        df = pd.read_csv(csv_path)
-        df["at"] = pd.to_datetime(df["at"])
-        
-        with open(json_path, "r", encoding="utf-8") as f:
-            analysis = json.load(f)
-        
-        st.info("📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
-        st.success(f"✅ **{analysis['stats']['total']:,}건** 리뷰 분석 완료! (네이버 웹툰)")
-        
-        # 탭 구성
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📈 통계", "📂 토픽분류", "🔎 키워드분석", "🙏 요청/리뷰", "😊 감성/불만"
-        ])
-        
-        stats = analysis["stats"]
-        
-        # 탭 1: 통계
-        with tab1:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("총 리뷰", f"{stats['total']:,}")
-            with col2:
-                st.metric("평균 평점", f"{stats['avg_score']}⭐")
-            with col3:
-                pos_rate = stats['pos_count'] / stats['total'] * 100
-                st.metric("긍정 비율", f"{pos_rate:.0f}%")
-            with col4:
-                neg_rate = stats['neg_count'] / stats['total'] * 100
-                st.metric("부정 비율", f"{neg_rate:.0f}%")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 📅 날짜별 리뷰")
-                daily = df.groupby(df["at"].dt.date).size()
-                st.line_chart(daily)
-            with col2:
-                st.markdown("#### ⭐ 평점 분포")
-                score_dist = {int(k): v for k, v in stats["score_dist"].items()}
-                st.bar_chart(pd.Series(score_dist).sort_index())
-        
-        # 탭 2: 토픽분류
-        with tab2:
-            st.markdown("### 📂 토픽별 리뷰 분류")
-            topics = analysis["topics"]
-            
-            for topic, indices in topics.items():
-                count = len(indices)
-                if count > 0:
-                    with st.expander(f"{topic} ({count:,}건)", expanded=True):
-                        sample_indices = indices[:5]
-                        for idx in sample_indices:
-                            if idx < len(df):
-                                row = df.iloc[idx]
-                                st.caption(f"⭐{row['score']} | {str(row['content'])[:100]}...")
-        
-        # 탭 3: 키워드분석
-        with tab3:
-            st.markdown("### 🔎 키워드 분석")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 📊 키워드 빈도 TOP 20")
-                keywords = analysis["keywords"][:20]
-                st.dataframe(pd.DataFrame(keywords, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
-            
-            with col2:
-                st.markdown("#### 🔗 키워드 조합 TOP 15")
-                bigrams = analysis["bigrams"][:15]
-                st.dataframe(pd.DataFrame(bigrams, columns=["조합", "빈도"]), use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            st.caption("💡 특정 키워드 분석은 상단에서 **신규 수집** 후 이용해주세요.")
-        
-        # 탭 4: 요청/리뷰
-        with tab4:
-            st.markdown("### 🙏 사용자 요청사항")
-            
-            requests = analysis["requests"]
-            if requests:
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("#### 요청사항 TOP 15")
-                    st.dataframe(pd.DataFrame(requests[:15], columns=["요청", "횟수"]), use_container_width=True, hide_index=True)
-                with col2:
-                    st.markdown("#### 요청 빈도")
-                    st.bar_chart(pd.DataFrame(requests[:8], columns=["요청", "횟수"]).set_index("요청"))
-            
-            st.markdown("---")
-            st.markdown("### 📝 리뷰 원문")
-            
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                keyword = st.text_input("키워드 검색", key="default_review_search", placeholder="검색어 입력")
-            with col2:
-                score_filter = st.multiselect("평점", [1,2,3,4,5], default=[1,2,3,4,5], key="default_review_score")
-            with col3:
-                sentiment_filter = st.multiselect("감성", ["긍정", "중립", "부정"], default=["긍정", "중립", "부정"], key="default_review_sent")
-            
-            filtered = df[df["score"].isin(score_filter) & df["sentiment"].isin(sentiment_filter)]
-            if keyword:
-                filtered = filtered[filtered["content"].str.contains(keyword, na=False)]
-            
-            st.write(f"**{len(filtered):,}건**")
-            display_df = filtered[["at", "score", "sentiment", "content"]].copy()
-            display_df["at"] = display_df["at"].dt.strftime("%Y-%m-%d")
-            display_df.columns = ["날짜", "평점", "감성", "내용"]
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=400)
-        
-        # 탭 5: 감성/불만
-        with tab5:
-            st.markdown("### 😊 감성 분석 결과")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                for sentiment, count in [("긍정", stats["pos_count"]), ("부정", stats["neg_count"]), ("중립", stats["neu_count"])]:
-                    pct = count / stats["total"] * 100
-                    if sentiment == "긍정":
-                        st.success(f"😊 긍정: **{count:,}건** ({pct:.1f}%)")
-                    elif sentiment == "부정":
-                        st.error(f"😤 부정: **{count:,}건** ({pct:.1f}%)")
-                    else:
-                        st.warning(f"😐 중립: **{count:,}건** ({pct:.1f}%)")
-            
-            with col2:
-                sentiment_by_score = analysis["sentiment_by_score"]
-                score_sent_df = pd.DataFrame(sentiment_by_score).T
-                score_sent_df.index = [int(i) for i in score_sent_df.index]
-                score_sent_df = score_sent_df.sort_index()
-                st.dataframe(score_sent_df, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("### 😤 불만 집중 분석 (1~2점)")
-            
-            complaints = analysis["complaints"]
-            st.markdown(f"🔴 불만 리뷰: **{complaints['count']:,}건** ({complaints['count']/stats['total']*100:.1f}%)")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 2단어 조합")
-                if complaints["bigrams"]:
-                    st.dataframe(pd.DataFrame(complaints["bigrams"][:15], columns=["조합", "빈도"]), use_container_width=True, hide_index=True)
-            
-            with col2:
-                st.markdown("#### 3단어 조합 (맥락)")
-                if complaints["trigrams"]:
-                    st.dataframe(pd.DataFrame(complaints["trigrams"][:15], columns=["조합", "빈도"]), use_container_width=True, hide_index=True)
-            
-            # 불만 리뷰 원문
-            with st.expander(f"📋 불만 리뷰 원문 ({complaints['count']:,}건)", expanded=True):
-                neg_df = df.iloc[complaints["indices"]]
-                search_complaint = st.text_input("🔍 검색", key="default_complaint_search")
-                if search_complaint:
-                    neg_df = neg_df[neg_df["content"].str.contains(search_complaint, na=False)]
-                
-                display_neg = neg_df[["at", "score", "content"]].copy()
-                display_neg["at"] = display_neg["at"].dt.strftime("%Y-%m-%d")
-                display_neg.columns = ["날짜", "평점", "내용"]
-                st.dataframe(display_neg, use_container_width=True, hide_index=True, height=300)
-    
-    except Exception as e:
-        st.error(f"기본 데이터 로드 실패: {e}")
-        # fallback: 기존 방식
-        default_df = load_default_data()
-        display_analysis(default_df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건")
 
 # ----------------------------
 # 메인 분석 표시 함수 (신규 수집용)
@@ -1220,9 +1046,10 @@ if collect_btn and has_input:
 if st.session_state.get("collected_df") is not None and not st.session_state["collected_df"].empty:
     display_analysis(st.session_state["collected_df"], st.session_state.get("collected_app", ""))
 
-# 수집된 데이터가 없으면 기본 데이터 표시 (JSON 기반 즉시 로딩)
+# 수집된 데이터가 없으면 기본 데이터 표시
 else:
-    display_default_analysis()
+    default_df = load_default_data()
+    display_analysis(default_df, "네이버 웹툰", "📌 **기본 데이터**: 네이버 웹툰 리뷰 1,000건 (2025.01.19 기준)")
 
 st.markdown("---")
 st.caption("Made with ❤️ using Streamlit | 데이터: Google Play Store")
