@@ -6,8 +6,6 @@ from wordcloud import WordCloud
 import re
 import os
 from io import BytesIO
-from pyvis.network import Network
-import streamlit.components.v1 as components
 
 # ----------------------------
 # 페이지 설정
@@ -333,6 +331,10 @@ def load_default_data():
         df = pd.read_csv(csv_path)
         df["at"] = pd.to_datetime(df["at"])
         
+        # 메모리 최적화: 최대 500건만 사용
+        if len(df) > 500:
+            df = df.head(500)
+        
         # CSV에 이미 sentiment가 있으면 바로 반환
         if "sentiment" in df.columns:
             return df
@@ -597,112 +599,6 @@ def generate_wordcloud_image(word_freq_tuple, font_path):
         return img_buffer.getvalue()
     except:
         return None
-
-def generate_keyword_network(center_keyword, related_keywords, contents_list, sentiment_type="neutral"):
-    """연관어 네트워크 그래프 생성 (2차 연결 포함)"""
-    # 색상 설정
-    if sentiment_type == "positive":
-        center_color = "#28a745"  # 녹색
-        level1_color = "#66bb6a"
-        level2_color = "#a5d6a7"
-        level3_color = "#c8e6c9"
-    elif sentiment_type == "negative":
-        center_color = "#dc3545"  # 빨간색
-        level1_color = "#ef5350"
-        level2_color = "#ef9a9a"
-        level3_color = "#ffcdd2"
-    else:
-        center_color = "#007bff"  # 파란색
-        level1_color = "#42a5f5"
-        level2_color = "#90caf9"
-        level3_color = "#bbdefb"
-    
-    # 정사각형 (400x400)
-    net = Network(height="400px", width="400px", bgcolor="#ffffff", font_color="#333333")
-    net.barnes_hut(gravity=-5000, central_gravity=0.35, spring_length=100)
-    
-    # 중심 키워드 노드 (레벨 0)
-    net.add_node(center_keyword, 
-                 label=center_keyword, 
-                 color=center_color, 
-                 size=50, 
-                 font={"size": 48, "face": "arial", "color": "#ffffff"},
-                 borderWidth=3,
-                 level=0)
-    
-    # 1차 연관 키워드 (레벨 1) - 최대 10개
-    max_freq = related_keywords[0][1] if related_keywords else 1
-    level1_keywords = []
-    
-    for keyword, freq in related_keywords[:10]:
-        size = 22 + (freq / max_freq) * 18
-        width = 2 + (freq / max_freq) * 4
-        
-        net.add_node(keyword, 
-                     label=f"{keyword}\n({freq})", 
-                     color=level1_color, 
-                     size=size,
-                     font={"size": 30, "face": "arial"},
-                     level=1)
-        net.add_edge(center_keyword, keyword, width=width, color=level1_color)
-        level1_keywords.append(keyword)
-    
-    # 2차 연관 키워드 계산 (레벨 2)
-    added_level2 = set()
-    level2_nodes = {}
-    
-    for l1_keyword in level1_keywords[:7]:  # 상위 7개 1차 키워드
-        co_keywords = []
-        for text in contents_list:
-            if l1_keyword in text and center_keyword in text:
-                tokens = simple_tokenizer(text)
-                for t in tokens:
-                    if t != l1_keyword and t != center_keyword and t not in level1_keywords:
-                        co_keywords.append(t)
-        
-        # 빈도 계산 후 상위 3개
-        co_counter = Counter(co_keywords).most_common(3)
-        for l2_keyword, l2_freq in co_counter:
-            if l2_keyword not in added_level2 and l2_freq >= 2:
-                node_id = f"L2_{l1_keyword}_{l2_keyword}"
-                net.add_node(node_id, 
-                             label=f"{l2_keyword}\n({l2_freq})", 
-                             color=level2_color, 
-                             size=14,
-                             font={"size": 24, "face": "arial"},
-                             level=2)
-                net.add_edge(l1_keyword, node_id, width=1.5, color=level2_color)
-                added_level2.add(l2_keyword)
-                level2_nodes[node_id] = l2_keyword
-    
-    # 3차 연관 키워드 (레벨 3) - 상위 2차 노드에서만
-    added_level3 = set()
-    for node_id, l2_keyword in list(level2_nodes.items())[:5]:
-        co_keywords = []
-        for text in contents_list:
-            if l2_keyword in text and center_keyword in text:
-                tokens = simple_tokenizer(text)
-                for t in tokens:
-                    if t != l2_keyword and t != center_keyword and t not in level1_keywords and t not in added_level2:
-                        co_keywords.append(t)
-        
-        co_counter = Counter(co_keywords).most_common(2)
-        for l3_keyword, l3_freq in co_counter:
-            if l3_keyword not in added_level3 and l3_freq >= 2:
-                l3_node_id = f"L3_{l2_keyword}_{l3_keyword}"
-                net.add_node(l3_node_id, 
-                             label=l3_keyword, 
-                             color=level3_color, 
-                             size=10,
-                             font={"size": 21, "face": "arial"},
-                             level=3)
-                net.add_edge(node_id, l3_node_id, width=1, color=level3_color)
-                added_level3.add(l3_keyword)
-    
-    # HTML 생성
-    html = net.generate_html()
-    html = html.replace("<head>", """<head><style>body{overflow:hidden;margin:0;padding:0;}#mynetwork{border:1px solid #e0e0e0;border-radius:8px;}</style>""")
-    return html
 
 @st.cache_data(ttl=7200)
 def extract_keywords_cached(contents_tuple):
@@ -1021,10 +917,6 @@ def display_analysis(df, app_name="", data_info=""):
                         pos_kw_counter = Counter(pos_tokens).most_common(15)
                         if pos_kw_counter:
                             st.dataframe(pd.DataFrame(pos_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
-                            
-                            # 연관어 네트워크 그래프 (2차 연결 포함)
-                            network_html = generate_keyword_network(deep_keyword, pos_kw_counter, pos_contents, "positive")
-                            components.html(network_html, height=420, width=420)
                     else:
                         st.info("긍정 리뷰 없음")
                 
@@ -1038,10 +930,6 @@ def display_analysis(df, app_name="", data_info=""):
                         neg_kw_counter = Counter(neg_tokens).most_common(15)
                         if neg_kw_counter:
                             st.dataframe(pd.DataFrame(neg_kw_counter, columns=["키워드", "빈도"]), use_container_width=True, hide_index=True)
-                            
-                            # 연관어 네트워크 그래프 (2차 연결 포함)
-                            network_html = generate_keyword_network(deep_keyword, neg_kw_counter, neg_contents, "negative")
-                            components.html(network_html, height=420, width=420)
                     else:
                         st.info("부정 리뷰 없음")
         
