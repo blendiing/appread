@@ -1,5 +1,5 @@
 import streamlit as st
-from google_play_scraper import reviews, Sort
+import requests
 import pandas as pd
 from collections import Counter
 from wordcloud import WordCloud
@@ -375,37 +375,53 @@ def load_default_data():
         return pd.DataFrame()
 
 # Modal API URL (배포 후 업데이트 필요)
+MODAL_API_URL = "https://blendiing--review-collector-collect-reviews-api.modal.run"
+
 def get_reviews_with_progress(app_id, count=500):
-    """리뷰 수집 (진행 상황 표시)"""
-    result = []
-    continuation_token = None
+    """리뷰 수집 (Modal API 사용)"""
+    import requests
     
-    progress_bar = st.progress(0, text="리뷰 수집 중...")
+    progress_bar = st.progress(0, text="🚀 수집 서버 연결 중...")
+    
     try:
-        while len(result) < count:
-            batch_size = min(100, count - len(result))
-            review_batch, continuation_token = reviews(
-                app_id, lang="ko", country="kr",
-                sort=Sort.NEWEST, count=batch_size,
-                continuation_token=continuation_token
-            )
-            result.extend(review_batch)
-            progress = min(len(result) / count, 1.0)
-            progress_bar.progress(progress, text=f"리뷰 수집 중... {len(result)}/{count}건")
-            if not continuation_token:
-                break
+        progress_bar.progress(0.2, text="🔄 Google Play에서 리뷰 수집 중...")
+        
+        response = requests.get(
+            MODAL_API_URL,
+            params={"app_id": app_id, "count": count},
+            timeout=300
+        )
+        
+        progress_bar.progress(0.8, text="📊 데이터 처리 중...")
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if result.get("success"):
+                df = pd.DataFrame(result["data"])
+                if not df.empty:
+                    df["at"] = pd.to_datetime(df["at"])
+                    df["content"] = df["content"].astype(str)
+                progress_bar.progress(1.0, text=f"✅ {len(df)}건 수집 완료!")
+                progress_bar.empty()
+                return df
+            else:
+                progress_bar.empty()
+                st.error(f"수집 실패: {result.get('error', '알 수 없는 오류')}")
+                return pd.DataFrame()
+        else:
+            progress_bar.empty()
+            st.error(f"API 오류: {response.status_code}")
+            return pd.DataFrame()
+            
+    except requests.exceptions.Timeout:
+        progress_bar.empty()
+        st.error("⏰ 수집 시간 초과 (5분). 수집 건수를 줄여주세요.")
+        return pd.DataFrame()
     except Exception as e:
         progress_bar.empty()
-        st.error(f"리뷰 수집 중 오류: {e}")
+        st.error(f"수집 중 오류: {e}")
         return pd.DataFrame()
-    
-    progress_bar.empty()
-    
-    df = pd.DataFrame(result)
-    if not df.empty:
-        df["at"] = pd.to_datetime(df["at"])
-        df["content"] = df["content"].astype(str)
-    return df
 
 # ----------------------------
 # 분석 함수들 (캐싱 적용)
