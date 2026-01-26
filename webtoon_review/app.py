@@ -1016,25 +1016,16 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
-    # 샘플 앱 ID - 복사 버튼 포함
+    # 샘플 앱 ID - 전체 URL 표시
     with st.expander("📋 샘플 앱 ID", expanded=True):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown("**네이버 웹툰**")
-        with col2:
-            st.code("com.nhn.android.webtoon", language=None)
+        st.markdown("**네이버 웹툰**")
+        st.code("com.nhn.android.webtoon")
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown("**카카오페이지**")
-        with col2:
-            st.code("com.kakaopage.app", language=None)
+        st.markdown("**카카오페이지**")
+        st.code("com.kakaopage.app")
         
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown("**리디북스**")
-        with col2:
-            st.code("com.initialcoms.ridi", language=None)
+        st.markdown("**리디북스**")
+        st.code("com.initialcoms.ridi")
     
     st.markdown("---")
     
