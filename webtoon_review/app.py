@@ -1016,19 +1016,33 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     
-    # 샘플 앱 ID - 타이틀과 URL 한 줄로
+    # 샘플 앱 ID - 복사 버튼 포함
     with st.expander("📋 샘플 앱 ID", expanded=True):
-        st.markdown("**네이버 웹툰** &nbsp;`com.nhn.android.webtoon`")
-        st.markdown("**카카오페이지** &nbsp;`com.kakaopage.app`")
-        st.markdown("**리디북스** &nbsp;`com.initialcoms.ridi`")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("**네이버 웹툰**")
+        with col2:
+            st.code("com.nhn.android.webtoon", language=None)
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("**카카오페이지**")
+        with col2:
+            st.code("com.kakaopage.app", language=None)
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("**리디북스**")
+        with col2:
+            st.code("com.initialcoms.ridi", language=None)
     
     st.markdown("---")
     
     # 수집 옵션
     review_count = st.select_slider(
         "📊 수집 리뷰 수",
-        options=[100, 300, 500, 700, 1000],
-        value=500
+        options=[100, 200, 300, 500, 700, 1000],
+        value=200
     )
     
     # 데이터 수집 버튼
