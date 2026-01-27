@@ -375,7 +375,7 @@ def load_default_data():
         return pd.DataFrame()
 
 # Modal API URL (배포 후 업데이트 필요)
-MODAL_API_URL = "https://blendiing--review-collector-collect-reviews-api.modal.run"
+MODAL_API_URL = "https://blendiing--review-collector-collect-reviews-api.modal.run/"
 
 def get_reviews_with_progress(app_id, count=500):
     """리뷰 수집 (Modal API 사용)"""
@@ -1022,7 +1022,7 @@ with st.sidebar:
         st.code("com.nhn.android.webtoon")
         
         st.markdown("**카카오페이지**")
-        st.code("com.kakaopage.app")
+        st.code("com.kakao.page")
         
         st.markdown("**리디북스**")
         st.code("com.initialcoms.ridi")
