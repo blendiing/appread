@@ -400,7 +400,10 @@ def get_reviews_with_progress(app_id, count=500):
             if result.get("success"):
                 df = pd.DataFrame(result["data"])
                 if not df.empty:
-                    df["at"] = pd.to_datetime(df["at"])
+                    # 디버깅: 원본 날짜 값 확인
+                    st.write("원본 at 값:", df["at"].iloc[0] if len(df) > 0 else "없음")
+                    df["at"] = pd.to_datetime(df["at"], errors='coerce')
+                    st.write("변환 후 at 값:", df["at"].iloc[0] if len(df) > 0 else "없음")
                     df["content"] = df["content"].astype(str)
                 progress_bar.progress(1.0, text=f"✅ {len(df)}건 수집 완료!")
                 progress_bar.empty()
