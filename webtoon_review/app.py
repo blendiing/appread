@@ -400,10 +400,7 @@ def get_reviews_with_progress(app_id, count=500):
             if result.get("success"):
                 df = pd.DataFrame(result["data"])
                 if not df.empty:
-                    # 디버깅: 원본 날짜 값 확인
-                    st.write("원본 at 값:", df["at"].iloc[0] if len(df) > 0 else "없음")
                     df["at"] = pd.to_datetime(df["at"], errors='coerce')
-                    st.write("변환 후 at 값:", df["at"].iloc[0] if len(df) > 0 else "없음")
                     df["content"] = df["content"].astype(str)
                 progress_bar.progress(1.0, text=f"✅ {len(df)}건 수집 완료!")
                 progress_bar.empty()
@@ -432,7 +429,8 @@ def get_reviews_with_progress(app_id, count=500):
 @st.cache_data(ttl=7200, show_spinner=False)
 def analyze_sentiment_basic_cached(df_json):
     """기본 감성 분석 (캐싱용)"""
-    df = pd.read_json(df_json)
+    from io import StringIO
+    df = pd.read_json(StringIO(df_json))
     results = []
     
     for _, row in df.iterrows():
@@ -464,7 +462,8 @@ def analyze_sentiment_basic_cached(df_json):
 @st.cache_data(ttl=7200, show_spinner=False)
 def analyze_sentiment_webtoon_cached(df_json):
     """웹툰/만화 특화 감성 분석 (캐싱용)"""
-    df = pd.read_json(df_json)
+    from io import StringIO
+    df = pd.read_json(StringIO(df_json))
     results = []
     pos_scores = []
     neg_scores = []
@@ -509,13 +508,15 @@ def analyze_sentiment_webtoon_cached(df_json):
 
 def analyze_sentiment_basic(df):
     """기본 감성 분석 (래퍼)"""
-    result_json = analyze_sentiment_basic_cached(df.to_json())
-    return pd.read_json(result_json)
+    from io import StringIO
+    result_json = analyze_sentiment_basic_cached(df.to_json(date_format='iso'))
+    return pd.read_json(StringIO(result_json))
 
 def analyze_sentiment_webtoon(df):
     """웹툰/만화 특화 감성 분석 (래퍼)"""
-    result_json = analyze_sentiment_webtoon_cached(df.to_json())
-    return pd.read_json(result_json)
+    from io import StringIO
+    result_json = analyze_sentiment_webtoon_cached(df.to_json(date_format='iso'))
+    return pd.read_json(StringIO(result_json))
 
 def get_matched_keywords(text, is_webtoon_mode=False):
     """텍스트에서 매칭된 감성 키워드 추출"""
